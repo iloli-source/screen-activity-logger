@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ffmpeg
+        run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        # PaddleOCR/Ollamaは遅延import設計のため、高速テストには重い実体が不要。
+        # --no-deps でパッケージ本体のみ入れ、テスト用依存を個別に追加する。
+        run: |
+          uv venv
+          uv pip install -e . --no-deps
+          uv pip install pytest pytest-cov pillow
+
+      - name: Run tests (fast: unit + ffmpeg integration)
+        # slowマーカー（PaddleOCRモデルDL・実VLM・e2e）はローカル/実機で実行する
+        run: .venv/bin/pytest -m "not slow" --cov --cov-report=term --cov-fail-under=70
+
+      # 注: フルスイート（OCR/e2e含む）はM4実機で `.venv/bin/pytest --cov` を実行。
+      # macOSランナーはプライベートリポジトリでは課金が重いためCIでは回さない。
