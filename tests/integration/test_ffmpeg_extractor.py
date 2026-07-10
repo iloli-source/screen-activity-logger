@@ -73,3 +73,47 @@ class TestFfmpegFrameExtractor:
             f.timestamp.seconds for f in frames if f.is_keyframe
         ]
         assert any(abs(s - 3.0) <= 1.0 for s in keyframe_seconds)
+
+
+@pytest.fixture(scope="module")
+def high_res_video(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Retina画面録画を模した高解像度（2560x1600）の合成動画。"""
+    video = tmp_path_factory.mktemp("video") / "highres.mp4"
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "lavfi", "-i", "color=c=gray:size=2560x1600:duration=2:rate=10",
+        "-pix_fmt", "yuv420p", str(video),
+    ]
+    subprocess.run(cmd, check=True, capture_output=True)
+    return video
+
+
+class TestFrameDownscaling:
+    """実録画で発覚: フル解像度フレームは視覚トークンがVLMコンテキストを超過する。
+
+    調査済み推奨値（長辺896〜1024px）に基づき、抽出時に縮小する。
+    """
+
+    def test_frames_are_downscaled_to_max_long_edge(
+        self, high_res_video: Path, tmp_path: Path
+    ) -> None:
+        from PIL import Image
+
+        extractor = FfmpegFrameExtractor(
+            fps=1.0, scene_threshold=0.1, workdir=tmp_path, max_long_edge=1024
+        )
+        frames = extractor.extract(high_res_video)
+        widths = [Image.open(f.path).size[0] for f in frames]
+        assert all(w <= 1024 for w in widths)
+
+    def test_small_video_is_not_upscaled(
+        self, scene_change_video: Path, tmp_path: Path
+    ) -> None:
+        from PIL import Image
+
+        extractor = FfmpegFrameExtractor(
+            fps=1.0, scene_threshold=0.1, workdir=tmp_path, max_long_edge=1024
+        )
+        frames = extractor.extract(scene_change_video)
+        # 元動画は320x240なので拡大されないこと
+        assert Image.open(frames[0].path).size[0] == 320

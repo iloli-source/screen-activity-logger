@@ -25,11 +25,16 @@ def parse_scene_timestamps(ffmpeg_stderr: str) -> tuple[float, ...]:
 
 @dataclass(frozen=True)
 class FfmpegFrameExtractor:
-    """ffmpeg CLIを用いたFrameExtractorポートの実装。"""
+    """ffmpeg CLIを用いたFrameExtractorポートの実装。
+
+    max_long_edge: フレームの長辺上限（px）。高解像度画面録画の視覚トークンが
+    VLMのコンテキストを超過しないよう縮小する（調査推奨値: 896〜1024）。
+    """
 
     fps: float
     scene_threshold: float
     workdir: Path
+    max_long_edge: int = 1024
 
     def extract(self, video_path: Path) -> tuple[Frame, ...]:
         frame_paths = self._sample_uniform_frames(video_path)
@@ -39,10 +44,12 @@ class FfmpegFrameExtractor:
     def _sample_uniform_frames(self, video_path: Path) -> tuple[Path, ...]:
         self.workdir.mkdir(parents=True, exist_ok=True)
         pattern = self.workdir / "frame_%06d.png"
+        # scale: 長辺がmax_long_edgeを超える場合のみ縮小（拡大はしない）。-2は偶数丸め
+        scale = f"scale='min({self.max_long_edge},iw)':-2"
         subprocess.run(
             [
                 "ffmpeg", "-y", "-i", str(video_path),
-                "-vf", f"fps={self.fps}",
+                "-vf", f"fps={self.fps},{scale}",
                 str(pattern),
             ],
             check=True,

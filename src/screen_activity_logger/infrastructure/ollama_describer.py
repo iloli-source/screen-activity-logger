@@ -26,6 +26,9 @@ _CODE_FENCE_PATTERN = re.compile(r"^```[a-zA-Z]*\n|\n?```$")
 
 _FALLBACK_ACTION = "（この画面の説明を生成できませんでした）"
 
+# 画像の視覚トークン＋プロンプトが収まるコンテキスト長（Ollama既定4096では不足）
+_NUM_CTX = 8192
+
 
 class ChatClient(Protocol):
     """ollama.Client互換の最小インターフェース。"""
@@ -51,6 +54,7 @@ class OllamaSceneDescriber:
                 }
             ],
             think=False,
+            options={"num_ctx": _NUM_CTX},
         )
         content = self._response_content(response)
         app_guess, action = self._parse(content)

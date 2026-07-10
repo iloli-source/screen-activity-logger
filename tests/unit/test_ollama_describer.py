@@ -105,3 +105,12 @@ class TestOllamaSceneDescriber:
         assert call["model"] == "qwen3-vl:8b"
         assert call["messages"][0]["images"] == ["/tmp/frame.png"]
         assert call["think"] is False
+
+    def test_requests_expanded_context_window(self) -> None:
+        """実録画で発覚: 既定num_ctx=4096では視覚トークンが収まらない。"""
+        client = FakeOllamaClient('{"app_guess": null, "action": "a"}')
+        describer = OllamaSceneDescriber(model="qwen3-vl:8b", client=client)
+
+        describer.describe(_frame(), _ocr())
+
+        assert client.calls[0]["options"]["num_ctx"] >= 8192
