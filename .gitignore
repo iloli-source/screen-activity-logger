@@ -1,0 +1,44 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.python-version
+
+# --- 環境・秘密情報 ---
+.env
+.env.*
+*.key
+credentials.json
+
+# --- 実録画・中間生成物（プライバシー保護・容量対策）---
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.webm
+frames/
+keyframes/
+*.jsonl
+worklog.md
+out/
+outputs/
+
+# --- モデル・キャッシュ ---
+*.gguf
+*.safetensors
+*.bin
+models/
+.cache/
+
+# --- OS / エディタ ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
