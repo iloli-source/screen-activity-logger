@@ -43,6 +43,30 @@ PC画面を録画した動画（MP4）を入力に、**完全ローカル**で�
           worklog.jsonl → worklog.md
 ```
 
+## 使い方（Phase 1）
+
+```bash
+# セットアップ（初回のみ）
+uv venv -p 3.12 .venv
+uv pip install -e . && uv pip install -e ".[dev]"
+ollama pull qwen3-vl:8b
+
+# 実行
+.venv/bin/python -m screen_activity_logger.cli 録画.mp4 -o out/
+# → out/worklog.md（人間用）と out/worklog.jsonl（機械用）が生成される
+
+# オプション
+#   --fps 0.5              サンプリング頻度（既定0.5=2秒に1枚）
+#   --scene-threshold 0.08 シーン変化の閾値
+#   --model qwen3-vl:8b    OllamaのVLMモデル
+```
+
+```bash
+# テスト
+.venv/bin/pytest -m "not slow"   # 高速テストのみ
+.venv/bin/pytest --cov           # 全テスト＋カバレッジ（OCR/e2e含む）
+```
+
 ## 開発ロードマップ
 
 - **Phase 0（済）**: 技術調査・選定（本リポジトリの `docs/` と `BEST_PRACTICES.md`）
