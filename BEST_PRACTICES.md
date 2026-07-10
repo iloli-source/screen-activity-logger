@@ -15,6 +15,26 @@
 
 「録画MP4をバッチ処理して作業ログを出す」成熟オールインワンOSSは**存在しない**（近い `screenpipe` は"常時キャプチャ"型）。**自前パイプラインの組み立てが現実解。**
 
+### 0.1 ターゲット環境（実測 2026-07-11）
+
+開発機を `system_profiler` で実測した結果、**CUDA GPU機ではなく Apple Silicon** と判明。構成前提を以下に更新する。
+
+| 項目 | 実測値 | 影響 |
+|------|--------|------|
+| 機種 | MacBook Air / **Apple M4**（10コアCPU・10コアGPU・Metal 4） | CUDA系（AWQ/bitsandbytes/paddlepaddle-gpu）は**使用不可** |
+| メモリ | **24GB ユニファイドメモリ**（モデル実効 約16GB） | **Qwen3-VL-8B Q4が余裕で動く**。4Bへの妥協不要 |
+| OS | macOS 26.5.2 | — |
+| 導入済み | **Ollama 0.30.10** / **ffmpeg 8.1.1** / Python 3.14.6 | MiniCPM-V 4.6の対応条件（Ollama≥0.30）クリア済み。追加導入ほぼ不要 |
+| 冷却 | ファンレス | 長時間バッチは熱制限に注意 → 夜間バッチ or 分割処理 |
+
+**M4 Air向け本命構成**:
+```
+ffmpeg(済) + PaddleOCR PP-OCRv6 tiny/small(CPU) + Qwen3-VL-8B Q4(Ollama or mlx-vlm) + 階層型間引き
+```
+- ランタイムは **Ollama / llama.cpp(Metal) / mlx-vlm** の三択（CUDA系は全て対象外）
+- **mlx-vlm** はQwen3-VLでメモリ10GB→5.5GB・約2倍速の報告あり（Mac最速ルート、§4参照）
+- **PP-OCRv6 は論文にApple M4実測あり**（tiny 0.96秒/画像、6.1倍速）→ CPU動作で実用十分
+
 ---
 
 ## 1. VLM候補（画面理解＝「何をしているか」を説明）

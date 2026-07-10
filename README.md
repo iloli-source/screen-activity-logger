@@ -51,12 +51,15 @@ PC画面を録画した動画（MP4）を入力に、**完全ローカル**で�
 - **Phase 3**: 日本語作業ログの品質改善（プロンプト、Sarashina2.2による日本語第2パス）
 - **Phase 4（活用層）**: 作業ログを **Ruri v3 + Faiss** でインデックス化し、意味検索・分類・RAGを追加
 
-## 動作要件（想定）
+## 動作要件
 
-- Python 3.10+
-- ffmpeg
-- GPU: VRAM 8〜12GB（RTX 3060/4060相当、4bit/AWQ量子化前提）。CPUでもOCRのみなら可
-- 主要依存（Phase1想定）: `paddleocr`, `scenedetect[opencv]`, `transformers`, `qwen-vl-utils`, `bitsandbytes`
+**ターゲット環境（実測 2026-07-11）**: MacBook Air / Apple M4 / 24GBユニファイドメモリ / macOS 26.5.2
+
+- Python 3.10+（導入済み: 3.14.6）
+- ffmpeg（導入済み: 8.1.1）
+- Ollama 0.30以降（導入済み: 0.30.10）または mlx-vlm / llama.cpp(Metal)
+- 主要依存（Phase1想定）: `paddleocr`, `scenedetect[opencv]`, `ollama`(Pythonクライアント)
+- ※ Apple SiliconのためCUDA系（AWQ/bitsandbytes/paddlepaddle-gpu）は使用しない。NVIDIA GPU機で動かす場合は BEST_PRACTICES.md §4 のCUDA構成を参照
 
 ## プライバシー
 
