@@ -193,9 +193,52 @@ Input: screen.mp4
 
 ---
 
-## 10. 次アクション（実装フェーズ）
+## 10. 第2回調査アップデート（2026-07-11：中国・米国トレンド／論文／GitHub実測）
+
+Grok(X)・Codex(Web+arXiv)・Claude(GitHub実測)による第2回調査の反映。生データは `docs/research/round2_*.md`。
+
+### 10.1 事実訂正（Fable 5再検証）
+- **MiniCPM-V 4.6**: 2026-05-11リリース、**1.3B**（SigLIP2-400M＋Qwen3.5-0.8B）、Ollama v0.30以降で公式対応（初回調査の「2026-06」を訂正）
+- **llm-jp-4-vl-9b-beta**: 評価を格上げ。日本語10タスク平均で **Qwen3-VL-8Bと同等**（学習トークン180B vs 2T超）。日本語説明重視ならVLM層の実測比較候補
+- **PP-OCRv6**: 2026-06-11リリース確定（arXiv:2606.13108）。**論文が「VLMはOCRで幻覚・位置誤差・コスト問題」と明記** → 本設計のOCR/VLM二層分離が学術的に裏付けられた
+
+### 10.2 推奨スタックの更新点
+| 項目 | 更新 |
+|------|------|
+| 解像度 | 長辺1280-1600 → **長辺896〜1024px** に引き下げ（X実運用の合意点。「重み量子化より入力ピクセル制御が本丸」） |
+| 間引き | **階層型に強化**: 1fps uniform＋変化点検出 → 重要区間のみ高fps再解析（TimeProVe系でVLM呼び出し75%減の報告） |
+| 日本語整形 | **VLM＋小型テキストLLMの分業**を追加。小型VLMはthinking off＋低温度＋短い構造化出力(JSON)で安定 |
+| OCR代替 | PaddleOCR本命は維持。**GLM-OCR(0.9B)/DeepSeek-OCR(-2)** を比較検証候補に追加（2026H1のOCR特化再ブーム: baidu/Unlimited-OCRは3週間で⭐13.9k） |
+| 評価 | **MS4UI**(arXiv:2506.12623) をベンチマーク採用候補に。UI操作動画2,413本/167時間の「録画→手順要約」評価データセット |
+| 活用層 | Ruri v3(テキスト検索)＋ **Qwen3-VL-Embedding**(スクショ直接検索)の併用を検討 |
+
+### 10.3 直結論文リスト
+| 論文 | arXiv | 本用途への示唆 |
+|------|-------|----------------|
+| MS4UI | 2506.12623 | **同一課題のベンチマーク**。既存手法が苦戦＝空白地帯の証明 |
+| Qwen3-VL Technical Report | 2511.21631 | interleaved-MRoPE、text-timestamp alignment、256K context |
+| MiniCPM-V 4.5 | 2509.18154 | 3D-Resamplerで動画圧縮符号化。Qwen2.5-VL 7B比メモリ46.7% |
+| Eagle 2.5 (NVIDIA) | 2504.15271 | 長尺動画のAutomatic Degrade Sampling（フレーム投入と劣化制御） |
+| ShowUI | 2411.17465 | UI誘導の視覚トークン33%削減（低VRAM向き） |
+| UI-TARS / UI-TARS-2 | 2501.12326 / 2509.02544 | 録画理解の本質は単発画像でなく**状態遷移の推定** |
+| PP-OCRv6 | 2606.13108 | 34.5MパラでVLM超えOCR。VLM-OCRの幻覚を明記 |
+| GLM-OCR | 2603.10910 | 0.9BのOCR特化。layout＋region認識の2段構成 |
+| DeepSeek-OCR | 2510.18234 | 視覚トークン圧縮(100〜800 tokens/page)という発想 |
+| FastVLM (Apple) | 2412.13303 | 画面系はモデルサイズよりvision encoder/token設計がボトルネック |
+
+### 10.4 競合状況（GitHub実測 2026-07-11）
+- 「録画MP4→ローカル作業ログ」の成熟OSSは**第2回調査でも未発見**
+- 先行例 `PBLIZZ/Screen-Recording-OCR` は同一用途だが**Geminiクラウド依存・⭐0**
+- → **完全ローカル版は依然として空白地帯**。詳細は `docs/research/round2_claude_github.md`
+
+---
+
+## 11. 次アクション（実装フェーズ）
+
+GitHub Issues で管理（`gh issue list` 参照）。
 
 1. `src/` に最小パイプライン実装：`extract_frames.py` → `ocr.py`(PaddleOCR) → `describe.py`(Qwen3-VL) → `merge.py`(JSONL→Markdown)
-2. サンプル動画1本で動作検証、VRAM実測、間引き閾値チューニング
-3. 日本語作業ログの品質評価、プロンプト改善
-4. （活用層）作業ログを **Ruri v3 + Faiss** でインデックス化し、意味検索・分類・RAGを追加
+2. サンプル動画1本で動作検証、VRAM実測、間引き閾値チューニング（解像度は長辺896〜1024pxから）
+3. 日本語作業ログの品質評価（MS4UI参考）、プロンプト改善、小型テキストLLM分業の検証
+4. OCR比較検証: PaddleOCR PP-OCRv6 vs GLM-OCR vs DeepSeek-OCR（日本語UI文字）
+5. （活用層）作業ログを **Ruri v3 + Faiss** でインデックス化。Qwen3-VL-Embeddingとの併用検討
