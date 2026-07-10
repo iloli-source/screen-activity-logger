@@ -24,6 +24,8 @@ _PROMPT_TEMPLATE = """あなたはPC作業の記録係です。このスクリ�
 
 _CODE_FENCE_PATTERN = re.compile(r"^```[a-zA-Z]*\n|\n?```$")
 
+_FALLBACK_ACTION = "（この画面の説明を生成できませんでした）"
+
 
 class ChatClient(Protocol):
     """ollama.Client互換の最小インターフェース。"""
@@ -78,6 +80,8 @@ class OllamaSceneDescriber:
     @staticmethod
     def _parse(content: str) -> tuple[str | None, str]:
         cleaned = _CODE_FENCE_PATTERN.sub("", content.strip()).strip()
+        if not cleaned:
+            return None, _FALLBACK_ACTION
         try:
             payload = json.loads(cleaned)
         except json.JSONDecodeError:
@@ -85,5 +89,5 @@ class OllamaSceneDescriber:
         app_guess = payload.get("app_guess")
         if isinstance(app_guess, str) and app_guess.lower() in ("null", "none", ""):
             app_guess = None
-        action = str(payload.get("action", "")).strip() or cleaned
+        action = str(payload.get("action", "")).strip() or _FALLBACK_ACTION
         return app_guess, action

@@ -58,6 +58,24 @@ class TestOllamaSceneDescriber:
         assert desc.app_guess is None
         assert desc.action == "資料を読んでいる"
 
+    def test_empty_response_falls_back_to_placeholder_action(self) -> None:
+        """実機で発生: VLMが空応答を返してもクラッシュせずログを残す。"""
+        client = FakeOllamaClient("")
+        describer = OllamaSceneDescriber(model="qwen3-vl:8b", client=client)
+
+        desc = describer.describe(_frame(), _ocr())
+
+        assert desc.action  # 空でないこと
+        assert desc.app_guess is None
+
+    def test_empty_action_in_valid_json_falls_back(self) -> None:
+        client = FakeOllamaClient('{"app_guess": "Finder", "action": ""}')
+        describer = OllamaSceneDescriber(model="qwen3-vl:8b", client=client)
+
+        desc = describer.describe(_frame(), _ocr())
+
+        assert desc.action
+
     def test_falls_back_to_raw_text_on_invalid_json(self) -> None:
         client = FakeOllamaClient("ブラウザで検索している様子です")
         describer = OllamaSceneDescriber(model="qwen3-vl:8b", client=client)
