@@ -19,12 +19,13 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+          cache-dependency-glob: "**/pyproject.toml"
 
       - name: Install dependencies
         # PaddleOCR/Ollamaは遅延import設計のため、高速テストには重い実体が不要。
         # --no-deps でパッケージ本体のみ入れ、テスト用依存を個別に追加する。
+        # venvはsetup-uvが作成済みのためuv venvは実行しない。
         run: |
-          uv venv
           uv pip install -e . --no-deps
           uv pip install pytest pytest-cov pillow
 
