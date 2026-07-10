@@ -28,7 +28,7 @@ jobs:
           uv pip install -e . --no-deps
           uv pip install pytest pytest-cov pillow
 
-      - name: Run tests (fast: unit + ffmpeg integration)
+      - name: "Run tests (fast: unit + ffmpeg integration)"
         # slowマーカー（PaddleOCRモデルDL・実VLM・e2e）はローカル/実機で実行する
         run: .venv/bin/pytest -m "not slow" --cov --cov-report=term --cov-fail-under=70
 
