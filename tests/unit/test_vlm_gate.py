@@ -124,11 +124,11 @@ class TestShouldDescribe:
     def test_high_similarity_skips(self) -> None:
         """話者切替: 文字がほぼ同じならスキップ。"""
         base = frozenset({f"token{i}" for i in range(20)})
-        nearly_same = frozenset(list(base)[:19] | {"新規1"})
+        nearly_same = frozenset(list(base)[:19]) | {"新規1"}  # jaccard=19/21≈0.905
         assert (
             should_describe(
                 now_seconds=30.0,
-                tokens=frozenset(nearly_same),
+                tokens=nearly_same,
                 last_vlm_seconds=0.0,
                 last_vlm_tokens=base,
                 config=CONFIG,
