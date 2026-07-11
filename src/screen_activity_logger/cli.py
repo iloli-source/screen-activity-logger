@@ -11,6 +11,7 @@ from screen_activity_logger.application.use_cases import (
     GenerateWorklog,
 )
 from screen_activity_logger.domain.services import TimelineMerger
+from screen_activity_logger.domain.vlm_gate import VlmGateConfig
 from screen_activity_logger.infrastructure.ffmpeg_extractor import (
     FfmpegFrameExtractor,
     has_audio_stream,
@@ -49,11 +50,13 @@ def build_use_case(
     diff_threshold: float = DEFAULT_DIFF_THRESHOLD,
     asr_model: str | None = None,
     ocr_keyframes_only: bool = False,
+    vlm_gate: VlmGateConfig | None = None,
 ) -> GenerateWorklog:
     """設定値から全アダプタを組み立てたユースケースを返す。
 
     asr_model: Noneなら音声認識を無効化する。
     ocr_keyframes_only: 会議モード（OCRをキーフレームに限定）。
+    vlm_gate: VLM間引きゲート（Noneで無効＝screencast既定）。
     """
     return GenerateWorklog(
         frame_extractor=FfmpegFrameExtractor(
@@ -67,6 +70,7 @@ def build_use_case(
             MlxWhisperTranscriber(model=asr_model) if asr_model else None
         ),
         ocr_keyframes_only=ocr_keyframes_only,
+        vlm_gate=vlm_gate,
     )
 
 
@@ -108,7 +112,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--mode", choices=["screencast", "meeting"], default="screencast",
-        help="meeting: OCRをキーフレームのみに限定（会議動画向け、既定: screencast）",
+        help="meeting: OCRをキーフレーム限定＋VLMゲート有効（会議動画向け、既定: screencast）",
+    )
+    parser.add_argument(
+        "--vlm-skip-threshold", type=float, default=0.85,
+        help="VLMスキップのJaccard閾値（meetingモード時のみ有効、既定: 0.85）",
+    )
+    parser.add_argument(
+        "--vlm-min-gap", type=float, default=10.0,
+        help="VLM呼び出しの最小間隔秒（debounce、既定: 10）",
+    )
+    parser.add_argument(
+        "--vlm-max-gap", type=float, default=120.0,
+        help="VLM強制実行の最大間隔秒（安全弁、既定: 120）",
     )
     args = parser.parse_args(argv)
 
@@ -133,6 +149,15 @@ def main(argv: list[str] | None = None) -> int:
             diff_threshold=args.diff_threshold,
             asr_model=asr_model,
             ocr_keyframes_only=(args.mode == "meeting"),
+            vlm_gate=(
+                VlmGateConfig(
+                    jaccard_skip_threshold=args.vlm_skip_threshold,
+                    min_gap_seconds=args.vlm_min_gap,
+                    max_gap_seconds=args.vlm_max_gap,
+                )
+                if args.mode == "meeting"
+                else None
+            ),
         )
         if len(args.videos) == 1:
             _run_single(use_case, args.videos[0], args.output_dir)

@@ -60,6 +60,31 @@ class TestBuildUseCase:
         )
         assert use_case.speech_transcriber is None
 
+    def test_meeting_mode_enables_vlm_gate(self, tmp_path: Path) -> None:
+        """Z3: --mode meetingでVLMゲートが既定値で有効化される。"""
+        from screen_activity_logger.domain.vlm_gate import VlmGateConfig
+
+        use_case = build_use_case(
+            fps=0.5,
+            scene_threshold=0.08,
+            model="qwen3-vl:8b",
+            ocr_tolerance_seconds=2.0,
+            workdir=tmp_path,
+            vlm_gate=VlmGateConfig(jaccard_skip_threshold=0.9),
+        )
+        assert use_case.vlm_gate is not None
+        assert use_case.vlm_gate.jaccard_skip_threshold == 0.9
+
+    def test_default_has_no_vlm_gate(self, tmp_path: Path) -> None:
+        use_case = build_use_case(
+            fps=0.5,
+            scene_threshold=0.08,
+            model="qwen3-vl:8b",
+            ocr_tolerance_seconds=2.0,
+            workdir=tmp_path,
+        )
+        assert use_case.vlm_gate is None
+
     def test_meeting_mode_wires_ocr_keyframes_only(self, tmp_path: Path) -> None:
         """Cycle W: --mode meeting はOCRをキーフレームのみに限定する。"""
         use_case = build_use_case(
