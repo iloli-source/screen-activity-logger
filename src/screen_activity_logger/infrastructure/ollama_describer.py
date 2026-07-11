@@ -12,9 +12,12 @@ from screen_activity_logger.domain.models import (
     OcrText,
 )
 
-_PROMPT_TEMPLATE = """あなたはPC作業の記録係です。このスクリーンショットについて:
-1) 使用中のアプリ/画面を推定する
-2) ユーザーが今している操作を1〜2文の日本語で説明する
+_PROMPT_TEMPLATE = """あなたはPC作業の記録係です。このスクリーンショットについて日本語で記録します:
+1) app_guess: 使用中のアプリ（Excel/PowerPoint/Chrome/VS Code等）
+2) resource: 開いているファイル名・Webページ（タイトルやURL）・文書名。タイトルバーやタブから読み取る
+3) location: リソース内の位置（シート名・スライド番号・ページ番号・見出し・URLパス等）
+4) focus: ユーザーが画面のどこを見て何を判断していそうか（カーソル位置・選択状態・強調から推測）
+5) action: 今している操作の説明（1〜2文）
 
 参考: この画面からOCRで抽出されたテキスト:
 {ocr_text}
@@ -22,8 +25,8 @@ _PROMPT_TEMPLATE = """あなたはPC作業の記録係です。このスクリ�
 参考: この時間帯にユーザーが話していた内容（音声認識）:
 {speech_text}
 
-次のJSONのみを出力してください（説明文・コードフェンス不要）:
-{{"app_guess": "アプリ名 or null", "action": "操作の説明"}}"""
+次のJSONのみを出力してください（説明文・コードフェンス不要。不明な項目はnull）:
+{{"app_guess": "...", "resource": "...", "location": "...", "focus": "...", "action": "..."}}"""
 
 _CODE_FENCE_PATTERN = re.compile(r"^```[a-zA-Z]*\n|\n?```$")
 
@@ -62,9 +65,14 @@ class OllamaSceneDescriber:
             options={"num_ctx": _NUM_CTX},
         )
         content = self._response_content(response)
-        app_guess, action = self._parse(content)
+        fields = self._parse(content)
         return ActivityDescription(
-            timestamp=frame.timestamp, action=action, app_guess=app_guess
+            timestamp=frame.timestamp,
+            action=fields["action"],
+            app_guess=fields["app_guess"],
+            resource=fields["resource"],
+            location=fields["location"],
+            focus=fields["focus"],
         )
 
     def _get_client(self) -> ChatClient:
@@ -88,16 +96,32 @@ class OllamaSceneDescriber:
         return str(response.message.content)
 
     @staticmethod
-    def _parse(content: str) -> tuple[str | None, str]:
+    def _parse(content: str) -> dict[str, str | None]:
+        empty: dict[str, str | None] = {
+            "app_guess": None,
+            "resource": None,
+            "location": None,
+            "focus": None,
+        }
         cleaned = _CODE_FENCE_PATTERN.sub("", content.strip()).strip()
         if not cleaned:
-            return None, _FALLBACK_ACTION
+            return {**empty, "action": _FALLBACK_ACTION}
         try:
             payload = json.loads(cleaned)
         except json.JSONDecodeError:
-            return None, cleaned
-        app_guess = payload.get("app_guess")
-        if isinstance(app_guess, str) and app_guess.lower() in ("null", "none", ""):
-            app_guess = None
-        action = str(payload.get("action", "")).strip() or _FALLBACK_ACTION
-        return app_guess, action
+            return {**empty, "action": cleaned}
+        fields: dict[str, str | None] = {
+            key: _normalize(payload.get(key)) for key in empty
+        }
+        fields["action"] = str(payload.get("action", "")).strip() or _FALLBACK_ACTION
+        return fields
+
+
+def _normalize(value: object) -> str | None:
+    """JSONの空値表現（null/"null"/"none"/空文字）をNoneに正規化する。"""
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    if not stripped or stripped.lower() in ("null", "none"):
+        return None
+    return stripped

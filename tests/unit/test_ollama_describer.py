@@ -106,6 +106,42 @@ class TestOllamaSceneDescriber:
         assert call["messages"][0]["images"] == ["/tmp/frame.png"]
         assert call["think"] is False
 
+    def test_parses_context_fields_from_json(self) -> None:
+        """Y3: resource/location/focusの構造化フィールドをパースする。"""
+        client = FakeOllamaClient(
+            '{"app_guess": "Excel", "resource": "見積書.xlsx", '
+            '"location": "Sheet1", "focus": "D列の合計を確認", '
+            '"action": "セルを修正している"}'
+        )
+        describer = OllamaSceneDescriber(model="qwen3-vl:8b", client=client)
+
+        desc = describer.describe(_frame(), _ocr())
+
+        assert desc.resource == "見積書.xlsx"
+        assert desc.location == "Sheet1"
+        assert desc.focus == "D列の合計を確認"
+
+    def test_missing_context_fields_default_to_none(self) -> None:
+        client = FakeOllamaClient('{"app_guess": null, "action": "作業中"}')
+        describer = OllamaSceneDescriber(model="qwen3-vl:8b", client=client)
+
+        desc = describer.describe(_frame(), _ocr())
+
+        assert desc.resource is None
+        assert desc.location is None
+        assert desc.focus is None
+
+    def test_prompt_asks_for_context_fields(self) -> None:
+        client = FakeOllamaClient('{"app_guess": null, "action": "a"}')
+        describer = OllamaSceneDescriber(model="qwen3-vl:8b", client=client)
+
+        describer.describe(_frame(), _ocr())
+
+        prompt = client.calls[0]["messages"][0]["content"]
+        assert "resource" in prompt
+        assert "location" in prompt
+        assert "focus" in prompt
+
     def test_requests_expanded_context_window(self) -> None:
         """実録画で発覚: 既定num_ctx=4096では視覚トークンが収まらない。"""
         client = FakeOllamaClient('{"app_guess": null, "action": "a"}')
