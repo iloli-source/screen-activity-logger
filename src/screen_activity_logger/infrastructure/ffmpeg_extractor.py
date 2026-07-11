@@ -23,6 +23,28 @@ def parse_scene_timestamps(ffmpeg_stderr: str) -> tuple[float, ...]:
     return tuple(float(m) for m in _PTS_TIME_PATTERN.findall(ffmpeg_stderr))
 
 
+def parse_audio_stream_presence(ffprobe_output: str) -> bool:
+    """ffprobe（codec_type出力）の結果から音声トラックの有無を判定する。"""
+    return bool(ffprobe_output.strip())
+
+
+def has_audio_stream(video_path: Path) -> bool:
+    """動画に音声トラックがあるかをffprobeで判定する。"""
+    result = subprocess.run(
+        [
+            "ffprobe", "-v", "error",
+            "-select_streams", "a",
+            "-show_entries", "stream=codec_type",
+            "-of", "csv=p=0",
+            str(video_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return parse_audio_stream_presence(result.stdout)
+
+
 @dataclass(frozen=True)
 class FfmpegFrameExtractor:
     """ffmpeg CLIを用いたFrameExtractorポートの実装。

@@ -31,6 +31,35 @@ class TestBuildUseCase:
         assert isinstance(use_case.scene_describer, OllamaSceneDescriber)
         assert use_case.merger.ocr_match_tolerance_seconds == 2.0
 
+    def test_wires_speech_transcriber_when_asr_model_given(
+        self, tmp_path: Path
+    ) -> None:
+        """Cycle S: ASRモデル指定時はMlxWhisperTranscriberが配線される。"""
+        from screen_activity_logger.infrastructure.mlx_whisper_transcriber import (
+            MlxWhisperTranscriber,
+        )
+
+        use_case = build_use_case(
+            fps=0.5,
+            scene_threshold=0.08,
+            model="qwen3-vl:8b",
+            ocr_tolerance_seconds=2.0,
+            workdir=tmp_path,
+            asr_model="kaiinui/kotoba-whisper-v2.0-mlx",
+        )
+        assert isinstance(use_case.speech_transcriber, MlxWhisperTranscriber)
+
+    def test_asr_disabled_when_model_is_none(self, tmp_path: Path) -> None:
+        use_case = build_use_case(
+            fps=0.5,
+            scene_threshold=0.08,
+            model="qwen3-vl:8b",
+            ocr_tolerance_seconds=2.0,
+            workdir=tmp_path,
+            asr_model=None,
+        )
+        assert use_case.speech_transcriber is None
+
     def test_wires_frame_comparator_and_ocr_tier(self, tmp_path: Path) -> None:
         """Cycle M: 差分スキップとOCR tierがCLIから設定できる。"""
         from screen_activity_logger.infrastructure.frame_comparator import (

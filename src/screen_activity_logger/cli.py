@@ -10,9 +10,14 @@ from screen_activity_logger.application.use_cases import GenerateWorklog
 from screen_activity_logger.domain.services import TimelineMerger
 from screen_activity_logger.infrastructure.ffmpeg_extractor import (
     FfmpegFrameExtractor,
+    has_audio_stream,
 )
 from screen_activity_logger.infrastructure.frame_comparator import (
     PilFrameComparator,
+)
+from screen_activity_logger.infrastructure.mlx_whisper_transcriber import (
+    DEFAULT_ASR_MODEL,
+    MlxWhisperTranscriber,
 )
 from screen_activity_logger.infrastructure.ollama_describer import (
     OllamaSceneDescriber,
@@ -39,8 +44,12 @@ def build_use_case(
     workdir: Path,
     ocr_tier: str = DEFAULT_OCR_TIER,
     diff_threshold: float = DEFAULT_DIFF_THRESHOLD,
+    asr_model: str | None = None,
 ) -> GenerateWorklog:
-    """設定値から全アダプタを組み立てたユースケースを返す。"""
+    """設定値から全アダプタを組み立てたユースケースを返す。
+
+    asr_model: Noneなら音声認識を無効化する。
+    """
     return GenerateWorklog(
         frame_extractor=FfmpegFrameExtractor(
             fps=fps, scene_threshold=scene_threshold, workdir=workdir
@@ -49,6 +58,9 @@ def build_use_case(
         scene_describer=OllamaSceneDescriber(model=model),
         merger=TimelineMerger(ocr_match_tolerance_seconds=ocr_tolerance_seconds),
         frame_comparator=PilFrameComparator(threshold=diff_threshold),
+        speech_transcriber=(
+            MlxWhisperTranscriber(model=asr_model) if asr_model else None
+        ),
     )
 
 
@@ -78,10 +90,22 @@ def main(argv: list[str] | None = None) -> int:
         "--diff-threshold", type=float, default=DEFAULT_DIFF_THRESHOLD,
         help="OCRスキップの画面差分閾値（0.0〜1.0、既定: 0.02）",
     )
+    parser.add_argument(
+        "--asr-model", default=DEFAULT_ASR_MODEL,
+        help=f"音声認識モデル（MLX形式のHFリポジトリ、既定: {DEFAULT_ASR_MODEL}）",
+    )
+    parser.add_argument(
+        "--no-asr", action="store_true", help="音声認識を無効化する"
+    )
     args = parser.parse_args(argv)
 
     if not args.video.exists():
         parser.error(f"動画が見つかりません: {args.video}")
+
+    asr_model: str | None = None if args.no_asr else args.asr_model
+    if asr_model and not has_audio_stream(args.video):
+        print("音声トラックなし → 音声認識をスキップします")
+        asr_model = None
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="sal-frames-") as tmp:
@@ -93,6 +117,7 @@ def main(argv: list[str] | None = None) -> int:
             workdir=Path(tmp),
             ocr_tier=args.ocr_tier,
             diff_threshold=args.diff_threshold,
+            asr_model=asr_model,
         )
         worklog = use_case.execute(args.video)
 
