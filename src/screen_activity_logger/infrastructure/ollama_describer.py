@@ -35,6 +35,10 @@ _FALLBACK_ACTION = "（この画面の説明を生成できませんでした）
 # 画像の視覚トークン＋プロンプトが収まるコンテキスト長（Ollama既定4096では不足）
 _NUM_CTX = 8192
 
+# VLM呼び出しのタイムアウト（秒）。実測: 応答が宙に浮くとsock_recvで
+# 無限待ちになりバッチ全体が停止するため必須（実会議10本バッチで発覚）
+DEFAULT_TIMEOUT_SECONDS = 300.0
+
 
 class ChatClient(Protocol):
     """ollama.Client互換の最小インターフェース。"""
@@ -45,25 +49,42 @@ class ChatClient(Protocol):
 class OllamaSceneDescriber:
     """フレーム画像＋OCRテキストから日本語の作業説明を生成する。"""
 
-    def __init__(self, model: str, client: ChatClient | None = None) -> None:
+    def __init__(
+        self,
+        model: str,
+        client: ChatClient | None = None,
+        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    ) -> None:
         self._model = model
         self._client = client
+        self._timeout_seconds = timeout_seconds
 
     def describe(
         self, frame: Frame, ocr: OcrText, speech: tuple[str, ...] = ()
     ) -> ActivityDescription:
-        response = self._get_client().chat(
-            model=self._model,
-            messages=[
-                {
-                    "role": "user",
-                    "content": self._build_prompt(ocr, speech),
-                    "images": [str(frame.path)],
-                }
-            ],
-            think=False,
-            options={"num_ctx": _NUM_CTX},
-        )
+        try:
+            response = self._get_client().chat(
+                model=self._model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": self._build_prompt(ocr, speech),
+                        "images": [str(frame.path)],
+                    }
+                ],
+                think=False,
+                options={"num_ctx": _NUM_CTX},
+            )
+        except Exception as error:  # noqa: BLE001 — バッチ継続を優先しログに残す
+            print(
+                f"VLM呼び出し失敗 t={frame.timestamp}: {type(error).__name__}: {error}",
+                flush=True,
+            )
+            return ActivityDescription(
+                timestamp=frame.timestamp,
+                action=f"（VLM呼び出し失敗: {type(error).__name__}）",
+                app_guess=None,
+            )
         content = self._response_content(response)
         fields = self._parse(content)
         return ActivityDescription(
@@ -79,7 +100,7 @@ class OllamaSceneDescriber:
         if self._client is None:
             import ollama
 
-            self._client = ollama.Client()
+            self._client = ollama.Client(timeout=self._timeout_seconds)
         return self._client
 
     @staticmethod

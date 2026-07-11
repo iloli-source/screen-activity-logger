@@ -142,6 +142,42 @@ class TestOllamaSceneDescriber:
         assert "location" in prompt
         assert "focus" in prompt
 
+    def test_chat_failure_returns_fallback_instead_of_hanging_batch(self) -> None:
+        """実バッチで発覚: 応答が来ないと無限待ち→バッチ全体が停止する。
+
+        呼び出し失敗（タイムアウト等）はフォールバックエントリで継続する。
+        """
+
+        class FailingClient:
+            def chat(self, **kwargs):
+                raise TimeoutError("read timeout")
+
+        describer = OllamaSceneDescriber(
+            model="qwen3-vl:8b", client=FailingClient()
+        )
+
+        desc = describer.describe(_frame(), _ocr())
+
+        assert desc.action  # 空でない（例外を投げずログに残す）
+        assert "Timeout" in desc.action or "失敗" in desc.action
+
+    def test_lazy_client_is_created_with_timeout(self, monkeypatch) -> None:
+        """既定クライアントにタイムアウトが設定される（無限待ちの根治）。"""
+        import ollama as ollama_module
+
+        captured: dict = {}
+
+        class FakeClient:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+        monkeypatch.setattr(ollama_module, "Client", FakeClient)
+        describer = OllamaSceneDescriber(model="qwen3-vl:8b", timeout_seconds=120.0)
+
+        describer._get_client()
+
+        assert captured.get("timeout") == 120.0
+
     def test_requests_expanded_context_window(self) -> None:
         """実録画で発覚: 既定num_ctx=4096では視覚トークンが収まらない。"""
         client = FakeOllamaClient('{"app_guess": null, "action": "a"}')
