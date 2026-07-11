@@ -46,6 +46,7 @@ class TestJsonlWorklogWriter:
             "t": "00:12:34",
             "app_guess": "VS Code",
             "ocr": ["pytest", "FAILED test_auth.py"],
+            "speech": [],
             "action": "テスト失敗箇所をエディタで確認している",
         }
 
