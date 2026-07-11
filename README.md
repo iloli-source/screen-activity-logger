@@ -59,7 +59,11 @@ ollama pull qwen3-vl:8b
 #   --fps 0.5              サンプリング頻度（既定0.5=2秒に1枚）
 #   --scene-threshold 0.08 シーン変化の閾値
 #   --model qwen3-vl:8b    OllamaのVLMモデル
+#   --ocr-tier small       OCRモデル規模 tiny/small/medium（既定small）
+#   --diff-threshold 0.02  画面差分によるOCRスキップの閾値
 ```
+
+実測性能（M4 Air / Retina録画20秒）: 約69秒（差分OCRスキップ＋small tier適用後。適用前278秒）。
 
 ```bash
 # テスト
