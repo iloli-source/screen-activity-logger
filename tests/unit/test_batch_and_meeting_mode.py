@@ -157,6 +157,90 @@ class TestPrecomputedSegments:
         assert worklog.entries[0].speech == ("通常経路の発話",)
 
 
+class VaryingOcrRecognizer:
+    """フレームパスに応じて異なるOCRを返すフェイク。"""
+
+    def __init__(self, texts_by_stem: dict[str, tuple[str, ...]]) -> None:
+        self._by_stem = texts_by_stem
+
+    def recognize(self, frame: Frame) -> OcrText:
+        return OcrText(
+            timestamp=frame.timestamp,
+            lines=self._by_stem.get(frame.path.stem, ()),
+        )
+
+
+class CountingDescriber:
+    def __init__(self) -> None:
+        self.called_at: list[float] = []
+
+    def describe(
+        self, frame: Frame, ocr: OcrText, speech: tuple[str, ...] = ()
+    ) -> ActivityDescription:
+        self.called_at.append(frame.timestamp.seconds)
+        return ActivityDescription(
+            timestamp=frame.timestamp,
+            action=f"作業@{frame.timestamp.seconds}",
+            app_guess=None,
+        )
+
+
+def _kf(seconds: float, stem: str) -> Frame:
+    return Frame(
+        timestamp=VideoTimestamp(seconds=seconds),
+        path=Path(f"/tmp/{stem}.png"),
+        is_keyframe=True,
+    )
+
+
+class TestVlmGateInUseCase:
+    """Cycle Z2: VLMゲートのユースケース統合。"""
+
+    _MEETING_UI = ("参加者リスト", "ミュート解除", "チャット表示", "画面を共有")
+    _SHARED_DOC = ("四半期売上報告", "前年比較グラフ", "アクションアイテム一覧")
+
+    def _run(self, frames, ocr_map, gate):
+        from screen_activity_logger.domain.vlm_gate import VlmGateConfig
+
+        describer = CountingDescriber()
+        use_case = GenerateWorklog(
+            frame_extractor=FakeExtractor(frames),
+            text_recognizer=VaryingOcrRecognizer(ocr_map),
+            scene_describer=describer,
+            merger=TimelineMerger(ocr_match_tolerance_seconds=1.0),
+            vlm_gate=VlmGateConfig() if gate else None,
+        )
+        use_case.execute(Path("/tmp/v.mp4"))
+        return describer
+
+    def test_speaker_switches_with_same_text_call_vlm_once(self) -> None:
+        """話者切替の連続（文字不変）→ VLMは初回の1回だけ。"""
+        frames = [_kf(0.0, "a"), _kf(20.0, "b"), _kf(40.0, "c")]
+        ocr_map = {s: self._MEETING_UI for s in ("a", "b", "c")}
+        describer = self._run(frames, ocr_map, gate=True)
+        assert describer.called_at == [0.0]
+
+    def test_screen_share_start_fires_vlm(self) -> None:
+        """画面共有開始（文字が大きく変化）→ 発火。"""
+        frames = [_kf(0.0, "a"), _kf(30.0, "share")]
+        ocr_map = {"a": self._MEETING_UI, "share": self._SHARED_DOC}
+        describer = self._run(frames, ocr_map, gate=True)
+        assert describer.called_at == [0.0, 30.0]
+
+    def test_max_gap_forces_vlm_even_if_same(self) -> None:
+        frames = [_kf(0.0, "a"), _kf(130.0, "b")]
+        ocr_map = {"a": self._MEETING_UI, "b": self._MEETING_UI}
+        describer = self._run(frames, ocr_map, gate=True)
+        assert describer.called_at == [0.0, 130.0]
+
+    def test_gate_none_describes_all_keyframes(self) -> None:
+        """後方互換: ゲート未注入なら全キーフレームでVLM（現行動作）。"""
+        frames = [_kf(0.0, "a"), _kf(20.0, "b")]
+        ocr_map = {"a": self._MEETING_UI, "b": self._MEETING_UI}
+        describer = self._run(frames, ocr_map, gate=False)
+        assert describer.called_at == [0.0, 20.0]
+
+
 class RecordingWriter:
     def __init__(self) -> None:
         self.written: list[tuple[Worklog, Path]] = []

@@ -22,6 +22,11 @@ from screen_activity_logger.domain.models import (
 )
 from screen_activity_logger.domain.screen_context import enrich_description
 from screen_activity_logger.domain.services import TimelineMerger
+from screen_activity_logger.domain.vlm_gate import (
+    VlmGateConfig,
+    normalize_ocr_tokens,
+    should_describe,
+)
 
 # キーフレームのVLM説明に添える発話の時間窓（前後秒）
 SPEECH_CONTEXT_WINDOW_SECONDS = 15.0
@@ -48,6 +53,7 @@ class GenerateWorklog:
     frame_comparator: FrameComparator | None = None
     speech_transcriber: SpeechTranscriber | None = None
     ocr_keyframes_only: bool = False
+    vlm_gate: VlmGateConfig | None = None
 
     def execute(
         self,
@@ -71,14 +77,42 @@ class GenerateWorklog:
                 ),
                 ocr_lines=ocr_by_frame[frame.timestamp].lines,
             )
-            for frame in frames
-            if frame.is_keyframe
+            for frame in self._frames_to_describe(frames, ocr_by_frame)
         ]
         return self.merger.merge(
             descriptions=descriptions,
             ocr_texts=ocr_by_frame.values(),
             transcript_segments=segments,
         )
+
+    def _frames_to_describe(
+        self, frames: Sequence[Frame], ocr_by_frame: dict
+    ) -> list[Frame]:
+        """VLMを呼ぶキーフレームを選ぶ。
+
+        vlm_gate注入時: 「最後にVLMを呼んだフレーム」のOCRトークン集合との
+        Jaccard類似度で間引く（Issue #13、is_keyframeは変更しない）。
+        未注入時: 全キーフレーム（従来動作）。
+        """
+        keyframes = [f for f in frames if f.is_keyframe]
+        if self.vlm_gate is None:
+            return keyframes
+        selected: list[Frame] = []
+        last_seconds: float | None = None
+        last_tokens: frozenset[str] | None = None
+        for frame in keyframes:
+            tokens = normalize_ocr_tokens(ocr_by_frame[frame.timestamp].lines)
+            if should_describe(
+                now_seconds=frame.timestamp.seconds,
+                tokens=tokens,
+                last_vlm_seconds=last_seconds,
+                last_vlm_tokens=last_tokens,
+                config=self.vlm_gate,
+            ):
+                selected.append(frame)
+                last_seconds = frame.timestamp.seconds
+                last_tokens = tokens
+        return selected
 
     def _transcribe(self, video_path: Path) -> Sequence[TranscriptSegment]:
         if self.speech_transcriber is None:
