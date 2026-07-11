@@ -6,7 +6,10 @@ import argparse
 import tempfile
 from pathlib import Path
 
-from screen_activity_logger.application.use_cases import GenerateWorklog
+from screen_activity_logger.application.use_cases import (
+    BatchGenerateWorklog,
+    GenerateWorklog,
+)
 from screen_activity_logger.domain.services import TimelineMerger
 from screen_activity_logger.infrastructure.ffmpeg_extractor import (
     FfmpegFrameExtractor,
@@ -45,10 +48,12 @@ def build_use_case(
     ocr_tier: str = DEFAULT_OCR_TIER,
     diff_threshold: float = DEFAULT_DIFF_THRESHOLD,
     asr_model: str | None = None,
+    ocr_keyframes_only: bool = False,
 ) -> GenerateWorklog:
     """設定値から全アダプタを組み立てたユースケースを返す。
 
     asr_model: Noneなら音声認識を無効化する。
+    ocr_keyframes_only: 会議モード（OCRをキーフレームに限定）。
     """
     return GenerateWorklog(
         frame_extractor=FfmpegFrameExtractor(
@@ -61,6 +66,7 @@ def build_use_case(
         speech_transcriber=(
             MlxWhisperTranscriber(model=asr_model) if asr_model else None
         ),
+        ocr_keyframes_only=ocr_keyframes_only,
     )
 
 
@@ -69,10 +75,13 @@ def main(argv: list[str] | None = None) -> int:
         prog="screen-activity-logger",
         description="画面録画動画をローカルでOCR+VLM解析し、日本語の作業ログを生成する",
     )
-    parser.add_argument("video", type=Path, help="入力動画（mp4等）")
+    parser.add_argument(
+        "videos", type=Path, nargs="+", metavar="video",
+        help="入力動画（複数指定でバッチ2フェーズ処理: 全動画ASR→各動画OCR/VLM）",
+    )
     parser.add_argument(
         "-o", "--output-dir", type=Path, default=Path("."),
-        help="worklog.md / worklog.jsonl の出力先（既定: カレント）",
+        help="出力先（単一動画: 直下 / 複数動画: <動画名>/ サブディレクトリ）",
     )
     parser.add_argument("--fps", type=float, default=DEFAULT_FPS)
     parser.add_argument(
@@ -97,14 +106,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--no-asr", action="store_true", help="音声認識を無効化する"
     )
+    parser.add_argument(
+        "--mode", choices=["screencast", "meeting"], default="screencast",
+        help="meeting: OCRをキーフレームのみに限定（会議動画向け、既定: screencast）",
+    )
     args = parser.parse_args(argv)
 
-    if not args.video.exists():
-        parser.error(f"動画が見つかりません: {args.video}")
+    for video in args.videos:
+        if not video.exists():
+            parser.error(f"動画が見つかりません: {video}")
 
     asr_model: str | None = None if args.no_asr else args.asr_model
-    if asr_model and not has_audio_stream(args.video):
-        print("音声トラックなし → 音声認識をスキップします")
+    if asr_model and not all(has_audio_stream(v) for v in args.videos):
+        print("音声トラックのない動画あり → 音声認識をスキップします")
         asr_model = None
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -118,18 +132,57 @@ def main(argv: list[str] | None = None) -> int:
             ocr_tier=args.ocr_tier,
             diff_threshold=args.diff_threshold,
             asr_model=asr_model,
+            ocr_keyframes_only=(args.mode == "meeting"),
         )
-        worklog = use_case.execute(args.video)
+        if len(args.videos) == 1:
+            _run_single(use_case, args.videos[0], args.output_dir)
+        else:
+            _run_batch(use_case, args.videos, args.output_dir, asr_model)
+    return 0
 
-    md_path = args.output_dir / "worklog.md"
-    jsonl_path = args.output_dir / "worklog.jsonl"
+
+def _run_single(
+    use_case: GenerateWorklog, video: Path, output_dir: Path
+) -> None:
+    worklog = use_case.execute(video)
+    md_path = output_dir / "worklog.md"
+    jsonl_path = output_dir / "worklog.jsonl"
     MarkdownWorklogWriter().write(worklog, md_path)
     JsonlWorklogWriter().write(worklog, jsonl_path)
-
     print(f"エントリ数: {len(worklog.entries)}")
     print(f"出力: {md_path}")
     print(f"出力: {jsonl_path}")
-    return 0
+
+
+def _run_batch(
+    use_case: GenerateWorklog,
+    videos: list[Path],
+    output_dir: Path,
+    asr_model: str | None,
+) -> None:
+    if asr_model is None:
+        # ASRなしでも2フェーズ構造は維持（Phase Aが空になるだけ）
+        transcriber = _NullTranscriber()
+    else:
+        transcriber = MlxWhisperTranscriber(model=asr_model)
+    batch = BatchGenerateWorklog(
+        transcriber=transcriber,
+        use_case=use_case,
+        writers=[
+            (MarkdownWorklogWriter(), "worklog.md"),
+            (JsonlWorklogWriter(), "worklog.jsonl"),
+        ],
+    )
+    results = batch.execute(videos, output_dir=output_dir)
+    for video, worklog in results:
+        print(f"{video.stem}: エントリ{len(worklog.entries)}件 → {output_dir / video.stem}/")
+
+
+class _NullTranscriber:
+    """ASR無効時の空実装。"""
+
+    def transcribe(self, video_path: Path) -> tuple:
+        return ()
 
 
 if __name__ == "__main__":

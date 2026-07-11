@@ -60,6 +60,28 @@ class TestBuildUseCase:
         )
         assert use_case.speech_transcriber is None
 
+    def test_meeting_mode_wires_ocr_keyframes_only(self, tmp_path: Path) -> None:
+        """Cycle W: --mode meeting はOCRをキーフレームのみに限定する。"""
+        use_case = build_use_case(
+            fps=0.5,
+            scene_threshold=0.08,
+            model="qwen3-vl:8b",
+            ocr_tolerance_seconds=2.0,
+            workdir=tmp_path,
+            ocr_keyframes_only=True,
+        )
+        assert use_case.ocr_keyframes_only is True
+
+    def test_default_mode_keeps_full_ocr(self, tmp_path: Path) -> None:
+        use_case = build_use_case(
+            fps=0.5,
+            scene_threshold=0.08,
+            model="qwen3-vl:8b",
+            ocr_tolerance_seconds=2.0,
+            workdir=tmp_path,
+        )
+        assert use_case.ocr_keyframes_only is False
+
     def test_wires_frame_comparator_and_ocr_tier(self, tmp_path: Path) -> None:
         """Cycle M: 差分スキップとOCR tierがCLIから設定できる。"""
         from screen_activity_logger.infrastructure.frame_comparator import (
