@@ -42,6 +42,9 @@ class TimelineMerger:
                 action=desc.action,
                 app_guess=desc.app_guess,
                 ocr_lines=self._nearest_ocr_lines(desc.timestamp, ocr_list),
+                resource=desc.resource,
+                location=desc.location,
+                focus=desc.focus,
             )
             for desc in ordered
         ]
@@ -69,9 +72,13 @@ class TimelineMerger:
     def _collapse_consecutive(
         entries: Sequence[WorklogEntry],
     ) -> tuple[WorklogEntry, ...]:
+        # 同じ操作でもリソース（ファイル等）が変われば別エントリとして残す
         collapsed: list[WorklogEntry] = []
         for entry in entries:
-            if collapsed and collapsed[-1].action == entry.action:
+            if collapsed and (collapsed[-1].action, collapsed[-1].resource) == (
+                entry.action,
+                entry.resource,
+            ):
                 continue
             collapsed.append(entry)
         return tuple(collapsed)

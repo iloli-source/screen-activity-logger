@@ -52,11 +52,19 @@ class OcrText:
 
 @dataclass(frozen=True)
 class ActivityDescription:
-    """VLMによる「この画面で何をしているか」の説明。"""
+    """VLMによる「この画面で何をしているか」の説明。
+
+    resource: 開いているファイル名・URL・文書名（一次情報からの抽出 or VLM推測）
+    location: リソース内の位置（シート・スライド・ページ・見出し等）
+    focus: どこを見て判断しているか（VLM推測。視線情報ではない）
+    """
 
     timestamp: VideoTimestamp
     action: str
     app_guess: str | None
+    resource: str | None = None
+    location: str | None = None
+    focus: str | None = None
 
     def __post_init__(self) -> None:
         if not self.action.strip():
@@ -87,6 +95,9 @@ class WorklogEntry:
     app_guess: str | None
     ocr_lines: tuple[str, ...]
     speech: tuple[str, ...] = ()
+    resource: str | None = None
+    location: str | None = None
+    focus: str | None = None
 
 
 @dataclass(frozen=True)
