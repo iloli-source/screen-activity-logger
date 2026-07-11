@@ -112,4 +112,4 @@ class TestPipelineEndToEnd:
         first = json.loads(
             jsonl_path.read_text(encoding="utf-8").splitlines()[0]
         )
-        assert set(first.keys()) == {"t", "app_guess", "ocr", "action"}
+        assert set(first.keys()) == {"t", "app_guess", "ocr", "speech", "action"}

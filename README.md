@@ -61,9 +61,16 @@ ollama pull qwen3-vl:8b
 #   --model qwen3-vl:8b    OllamaのVLMモデル
 #   --ocr-tier small       OCRモデル規模 tiny/small/medium（既定small）
 #   --diff-threshold 0.02  画面差分によるOCRスキップの閾値
+#   --asr-model <repo>     音声認識モデル（既定: kaiinui/kotoba-whisper-v2.0-mlx）
+#   --no-asr               音声認識を無効化（音声トラックが無い場合は自動スキップ）
 ```
 
-実測性能（M4 Air / Retina録画20秒）: 約69秒（差分OCRスキップ＋small tier適用後。適用前278秒）。
+音声認識（ASR）を使う場合は追加インストール:
+```bash
+uv pip install -e ".[asr]"   # mlx-whisper（Apple Silicon専用）
+```
+
+実測性能（M4 Air / Retina録画20秒）: 約69秒（差分OCRスキップ＋small tier適用後。適用前278秒。ASR追加コストはほぼゼロ）。
 
 ```bash
 # テスト
