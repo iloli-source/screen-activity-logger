@@ -37,6 +37,27 @@ class TestSegmentsFromResult:
         assert segments_from_result({}) == ()
         assert segments_from_result({"segments": []}) == ()
 
+    def test_clamps_end_before_start(self) -> None:
+        """実会議音声で発生: Whisperがend<startのセグメントを返すことがある。
+
+        クラッシュせず、endをstartにクランプして発話を保持する。
+        """
+        result = {
+            "segments": [
+                {"start": 5.0, "end": 4.7, "text": "逆転セグメント"},
+            ]
+        }
+        segments = segments_from_result(result)
+        assert len(segments) == 1
+        assert segments[0].start.seconds == 5.0
+        assert segments[0].end.seconds == 5.0
+        assert segments[0].text == "逆転セグメント"
+
+    def test_clamps_negative_start_to_zero(self) -> None:
+        result = {"segments": [{"start": -0.3, "end": 1.0, "text": "冒頭"}]}
+        segments = segments_from_result(result)
+        assert segments[0].start.seconds == 0.0
+
 
 class TestParseAudioStreamPresence:
     def test_detects_audio_stream(self) -> None:

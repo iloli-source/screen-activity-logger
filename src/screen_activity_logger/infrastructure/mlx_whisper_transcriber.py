@@ -17,16 +17,22 @@ DEFAULT_ASR_MODEL = "kaiinui/kotoba-whisper-v2.0-mlx"
 
 
 def segments_from_result(result: Any) -> tuple[TranscriptSegment, ...]:
-    """mlx_whisper.transcribe の結果dictをTranscriptSegment列に変換する。"""
+    """mlx_whisper.transcribe の結果dictをTranscriptSegment列に変換する。
+
+    実会議音声ではWhisperが end < start や負のstartを返すことがあるため、
+    ドメインの不変条件を満たすようクランプする（発話テキストは保持）。
+    """
     segments = []
     for raw in result.get("segments", ()):
         text = str(raw.get("text", "")).strip()
         if not text:
             continue
+        start = max(0.0, float(raw["start"]))
+        end = max(start, float(raw["end"]))
         segments.append(
             TranscriptSegment(
-                start=VideoTimestamp(seconds=float(raw["start"])),
-                end=VideoTimestamp(seconds=float(raw["end"])),
+                start=VideoTimestamp(seconds=start),
+                end=VideoTimestamp(seconds=end),
                 text=text,
             )
         )
