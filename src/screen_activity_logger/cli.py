@@ -11,6 +11,9 @@ from screen_activity_logger.domain.services import TimelineMerger
 from screen_activity_logger.infrastructure.ffmpeg_extractor import (
     FfmpegFrameExtractor,
 )
+from screen_activity_logger.infrastructure.frame_comparator import (
+    PilFrameComparator,
+)
 from screen_activity_logger.infrastructure.ollama_describer import (
     OllamaSceneDescriber,
 )
@@ -24,6 +27,8 @@ DEFAULT_MODEL = "qwen3-vl:8b"
 DEFAULT_FPS = 0.5
 DEFAULT_SCENE_THRESHOLD = 0.08
 DEFAULT_OCR_TOLERANCE_SECONDS = 2.0
+DEFAULT_OCR_TIER = "small"
+DEFAULT_DIFF_THRESHOLD = 0.02
 
 
 def build_use_case(
@@ -32,15 +37,18 @@ def build_use_case(
     model: str,
     ocr_tolerance_seconds: float,
     workdir: Path,
+    ocr_tier: str = DEFAULT_OCR_TIER,
+    diff_threshold: float = DEFAULT_DIFF_THRESHOLD,
 ) -> GenerateWorklog:
     """設定値から全アダプタを組み立てたユースケースを返す。"""
     return GenerateWorklog(
         frame_extractor=FfmpegFrameExtractor(
             fps=fps, scene_threshold=scene_threshold, workdir=workdir
         ),
-        text_recognizer=PaddleOcrRecognizer(),
+        text_recognizer=PaddleOcrRecognizer(tier=ocr_tier),
         scene_describer=OllamaSceneDescriber(model=model),
         merger=TimelineMerger(ocr_match_tolerance_seconds=ocr_tolerance_seconds),
+        frame_comparator=PilFrameComparator(threshold=diff_threshold),
     )
 
 
@@ -62,6 +70,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--ocr-tolerance", type=float, default=DEFAULT_OCR_TOLERANCE_SECONDS
     )
+    parser.add_argument(
+        "--ocr-tier", choices=["tiny", "small", "medium"], default=DEFAULT_OCR_TIER,
+        help="OCRモデルの規模（tiny=最速/medium=最高精度、既定: small）",
+    )
+    parser.add_argument(
+        "--diff-threshold", type=float, default=DEFAULT_DIFF_THRESHOLD,
+        help="OCRスキップの画面差分閾値（0.0〜1.0、既定: 0.02）",
+    )
     args = parser.parse_args(argv)
 
     if not args.video.exists():
@@ -75,6 +91,8 @@ def main(argv: list[str] | None = None) -> int:
             model=args.model,
             ocr_tolerance_seconds=args.ocr_tolerance,
             workdir=Path(tmp),
+            ocr_tier=args.ocr_tier,
+            diff_threshold=args.diff_threshold,
         )
         worklog = use_case.execute(args.video)
 

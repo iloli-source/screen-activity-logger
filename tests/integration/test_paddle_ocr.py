@@ -68,3 +68,17 @@ class TestPaddleOcrRecognizer:
         ocr = recognizer.recognize(_frame(image_path))
 
         assert ocr.timestamp.seconds == 1.0
+
+
+class TestOcrTierIntegration:
+    """small tier（CLI既定）が日本語を読めることのスモーク（Cycle M）。"""
+
+    @pytest.mark.skipif(not _JP_FONT.exists(), reason="日本語フォントなし")
+    def test_small_tier_reads_japanese(self, tmp_path: Path) -> None:
+        image_path = tmp_path / "jp_small.png"
+        font = ImageFont.truetype(str(_JP_FONT), size=56)
+        _make_text_image(image_path, "作業ログを生成する", font)
+
+        ocr = PaddleOcrRecognizer(tier="small").recognize(_frame(image_path))
+
+        assert any("作業" in line for line in ocr.lines)
