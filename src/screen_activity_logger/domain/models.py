@@ -64,13 +64,29 @@ class ActivityDescription:
 
 
 @dataclass(frozen=True)
+class TranscriptSegment:
+    """音声認識による発話1区間。"""
+
+    start: VideoTimestamp
+    end: VideoTimestamp
+    text: str
+
+    def __post_init__(self) -> None:
+        if self.end < self.start:
+            raise ValueError("end must not be before start")
+        if not self.text.strip():
+            raise ValueError("text must not be empty")
+
+
+@dataclass(frozen=True)
 class WorklogEntry:
-    """作業ログの1エントリ（OCRとVLM説明の統合結果）。"""
+    """作業ログの1エントリ（OCR・VLM説明・発話の統合結果）。"""
 
     timestamp: VideoTimestamp
     action: str
     app_guess: str | None
     ocr_lines: tuple[str, ...]
+    speech: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
