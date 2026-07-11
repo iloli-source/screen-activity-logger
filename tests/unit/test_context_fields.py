@@ -46,6 +46,34 @@ class TestContextFieldDefaults:
         assert entry.focus is None
 
 
+class TestEnrichDescription:
+    """Y4: OCR由来の事実がVLM推測を上書きし、OCRが沈黙ならVLM値を採用。"""
+
+    def test_ocr_facts_override_vlm_guess(self) -> None:
+        from screen_activity_logger.domain.screen_context import enrich_description
+
+        vlm_desc = _desc(
+            1.0, "編集している", resource="たぶんreport.xlsx", location=None
+        )
+        enriched = enrich_description(
+            vlm_desc, ocr_lines=("見積書_2026Q2.xlsx - Excel", "Sheet1")
+        )
+        assert enriched.resource == "見積書_2026Q2.xlsx"  # OCRの事実が勝つ
+        assert enriched.location == "Sheet1"
+        assert enriched.app_guess == "Excel"  # タイトルバー由来
+        assert enriched.action == "編集している"  # actionは変えない
+
+    def test_vlm_values_used_when_ocr_silent(self) -> None:
+        from screen_activity_logger.domain.screen_context import enrich_description
+
+        vlm_desc = _desc(
+            1.0, "閲覧している", resource="料金ページ", focus="価格表"
+        )
+        enriched = enrich_description(vlm_desc, ocr_lines=("ただの本文",))
+        assert enriched.resource == "料金ページ"
+        assert enriched.focus == "価格表"
+
+
 class TestMergerPropagatesContext:
     def test_fields_flow_into_worklog_entry(self) -> None:
         merger = TimelineMerger(ocr_match_tolerance_seconds=1.0)

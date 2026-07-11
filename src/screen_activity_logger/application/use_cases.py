@@ -20,6 +20,7 @@ from screen_activity_logger.domain.models import (
     TranscriptSegment,
     Worklog,
 )
+from screen_activity_logger.domain.screen_context import enrich_description
 from screen_activity_logger.domain.services import TimelineMerger
 
 # キーフレームのVLM説明に添える発話の時間窓（前後秒）
@@ -62,10 +63,13 @@ class GenerateWorklog:
         )
         ocr_by_frame = self._recognize_frames(frames)
         descriptions = [
-            self.scene_describer.describe(
-                frame,
-                ocr_by_frame[frame.timestamp],
-                speech=self._speech_near(frame, segments),
+            enrich_description(
+                self.scene_describer.describe(
+                    frame,
+                    ocr_by_frame[frame.timestamp],
+                    speech=self._speech_near(frame, segments),
+                ),
+                ocr_lines=ocr_by_frame[frame.timestamp].lines,
             )
             for frame in frames
             if frame.is_keyframe

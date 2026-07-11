@@ -8,8 +8,10 @@ OCR行（一次情報）から「開いているアプリ・リソース・位�
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterable
+
+from screen_activity_logger.domain.models import ActivityDescription
 
 # ファイル名（拡張子必須で保守的に）
 _FILENAME_PATTERN = re.compile(
@@ -64,6 +66,23 @@ def _find_app_and_resource(
         if url_match:
             return None, url_match.group(1)
     return None, None
+
+
+def enrich_description(
+    desc: ActivityDescription, ocr_lines: Iterable[str]
+) -> ActivityDescription:
+    """OCR由来の事実（タイトルバー等）でVLM推測を上書きする。
+
+    OCRが該当を見つけられなかったフィールドはVLMの値を残す。
+    actionは変更しない。
+    """
+    ctx = parse_screen_context(ocr_lines)
+    return replace(
+        desc,
+        app_guess=ctx.app or desc.app_guess,
+        resource=ctx.resource or desc.resource,
+        location=ctx.location or desc.location,
+    )
 
 
 def _find_location(lines: tuple[str, ...]) -> str | None:
