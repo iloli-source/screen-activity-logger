@@ -28,6 +28,12 @@ class TextRecognizer(Protocol):
     def recognize(self, frame: Frame) -> OcrText: ...
 
 
+class FrameComparator(Protocol):
+    """2フレームがほぼ同一画面かを判定する（OCRスキップ用）。"""
+
+    def are_similar(self, a: Frame, b: Frame) -> bool: ...
+
+
 class SceneDescriber(Protocol):
     """フレーム画像から「何をしているか」を説明する（VLM層）。"""
 

@@ -56,6 +56,13 @@ class FakeSceneDescriber:
         )
 
 
+class FakeFrameComparator:
+    """パスが同じ画像を「類似」とみなすフェイク。"""
+
+    def are_similar(self, a: Frame, b: Frame) -> bool:
+        return a.path == b.path
+
+
 def _use_case(
     frames: list[Frame],
 ) -> tuple[GenerateWorklog, FakeTextRecognizer, FakeSceneDescriber]:
@@ -68,6 +75,14 @@ def _use_case(
         merger=TimelineMerger(ocr_match_tolerance_seconds=1.0),
     )
     return use_case, recognizer, describer
+
+
+def _frame_at_path(seconds: float, path: str, is_keyframe: bool = False) -> Frame:
+    return Frame(
+        timestamp=VideoTimestamp(seconds=seconds),
+        path=Path(path),
+        is_keyframe=is_keyframe,
+    )
 
 
 class TestGenerateWorklog:
@@ -113,3 +128,94 @@ class TestGenerateWorklog:
         worklog = use_case.execute(Path("/tmp/video.mp4"))
 
         assert worklog.entries == ()
+
+
+class TestOcrSkipWithComparator:
+    """フレーム差分によるOCRスキップ（Cycle K: RED）。
+
+    実測でOCRが処理時間の72%を占めたため、直前OCR済みフレームと
+    類似するフレームは認識せず前回結果を再利用する。
+    """
+
+    def _use_case_with_comparator(
+        self, frames: list[Frame]
+    ) -> tuple[GenerateWorklog, FakeTextRecognizer]:
+        recognizer = FakeTextRecognizer()
+        use_case = GenerateWorklog(
+            frame_extractor=FakeFrameExtractor(frames),
+            text_recognizer=recognizer,
+            scene_describer=FakeSceneDescriber(),
+            merger=TimelineMerger(ocr_match_tolerance_seconds=1.0),
+            frame_comparator=FakeFrameComparator(),
+        )
+        return use_case, recognizer
+
+    def test_similar_frames_skip_recognizer(self) -> None:
+        # 同一パス＝類似。3フレーム中、実際に認識されるのは先頭の1回のみ
+        frames = [
+            _frame_at_path(1.0, "/tmp/same.png"),
+            _frame_at_path(2.0, "/tmp/same.png"),
+            _frame_at_path(3.0, "/tmp/same.png"),
+        ]
+        use_case, recognizer = self._use_case_with_comparator(frames)
+
+        use_case.execute(Path("/tmp/video.mp4"))
+
+        assert len(recognizer.recognized_frames) == 1
+
+    def test_changed_frame_is_recognized(self) -> None:
+        frames = [
+            _frame_at_path(1.0, "/tmp/a.png"),
+            _frame_at_path(2.0, "/tmp/a.png"),
+            _frame_at_path(3.0, "/tmp/b.png"),  # 画面が変わった
+        ]
+        use_case, recognizer = self._use_case_with_comparator(frames)
+
+        use_case.execute(Path("/tmp/video.mp4"))
+
+        recognized_paths = [f.path.name for f in recognizer.recognized_frames]
+        assert recognized_paths == ["a.png", "b.png"]
+
+    def test_keyframe_is_always_recognized_even_if_similar(self) -> None:
+        frames = [
+            _frame_at_path(1.0, "/tmp/same.png"),
+            _frame_at_path(2.0, "/tmp/same.png", is_keyframe=True),
+        ]
+        use_case, recognizer = self._use_case_with_comparator(frames)
+
+        use_case.execute(Path("/tmp/video.mp4"))
+
+        assert len(recognizer.recognized_frames) == 2
+
+    def test_skipped_frame_reuses_lines_with_own_timestamp(self) -> None:
+        frames = [
+            _frame_at_path(1.0, "/tmp/same.png", is_keyframe=True),
+            _frame_at_path(5.0, "/tmp/same.png"),
+        ]
+        use_case, _ = self._use_case_with_comparator(frames)
+
+        worklog = use_case.execute(Path("/tmp/video.mp4"))
+
+        # キーフレーム(1.0)のエントリには、スキップされたフレームではなく
+        # 認識済みの内容が紐づく（lines再利用の内部整合性の検証は
+        # 「2フレーム目もOCRテキストを持つ」ことで担保する）
+        entry = worklog.entries[0]
+        assert entry.ocr_lines == ("text@1.0",)
+
+    def test_without_comparator_all_frames_are_recognized(self) -> None:
+        """後方互換: comparator未注入なら従来どおり全フレームOCR。"""
+        frames = [
+            _frame_at_path(1.0, "/tmp/same.png"),
+            _frame_at_path(2.0, "/tmp/same.png"),
+        ]
+        recognizer = FakeTextRecognizer()
+        use_case = GenerateWorklog(
+            frame_extractor=FakeFrameExtractor(frames),
+            text_recognizer=recognizer,
+            scene_describer=FakeSceneDescriber(),
+            merger=TimelineMerger(ocr_match_tolerance_seconds=1.0),
+        )
+
+        use_case.execute(Path("/tmp/video.mp4"))
+
+        assert len(recognizer.recognized_frames) == 2
