@@ -74,6 +74,69 @@ class TestEnrichDescription:
         assert enriched.focus == "価格表"
 
 
+class TestContextInWriters:
+    """Y5: 見出し・👁行・JSONLキーの出力。"""
+
+    def _entry(self) -> WorklogEntry:
+        return WorklogEntry(
+            timestamp=VideoTimestamp(seconds=312.0),
+            action="単価セルを修正している",
+            app_guess="Excel",
+            ocr_lines=("見積書_2026Q2.xlsx - Excel",),
+            resource="見積書_2026Q2.xlsx",
+            location="Sheet1",
+            focus="D列の単価合計を確認しながら",
+        )
+
+    def test_markdown_heading_includes_context(self, tmp_path) -> None:
+        from pathlib import Path
+
+        from screen_activity_logger.domain.models import Worklog
+        from screen_activity_logger.infrastructure.writers import (
+            MarkdownWorklogWriter,
+        )
+
+        out = tmp_path / "worklog.md"
+        MarkdownWorklogWriter().write(Worklog.from_entries([self._entry()]), out)
+        text = out.read_text(encoding="utf-8")
+        assert "## 00:05:12 — Excel — 見積書_2026Q2.xlsx（Sheet1）" in text
+        assert "👁 D列の単価合計を確認しながら" in text
+
+    def test_markdown_omits_missing_parts(self, tmp_path) -> None:
+        from screen_activity_logger.domain.models import Worklog
+        from screen_activity_logger.infrastructure.writers import (
+            MarkdownWorklogWriter,
+        )
+
+        entry = WorklogEntry(
+            timestamp=VideoTimestamp(seconds=10.0),
+            action="作業中",
+            app_guess=None,
+            ocr_lines=(),
+        )
+        out = tmp_path / "worklog.md"
+        MarkdownWorklogWriter().write(Worklog.from_entries([entry]), out)
+        text = out.read_text(encoding="utf-8")
+        assert "## 00:00:10\n" in text
+        assert "👁" not in text
+        assert "None" not in text
+
+    def test_jsonl_includes_context_keys(self, tmp_path) -> None:
+        import json
+
+        from screen_activity_logger.domain.models import Worklog
+        from screen_activity_logger.infrastructure.writers import (
+            JsonlWorklogWriter,
+        )
+
+        out = tmp_path / "worklog.jsonl"
+        JsonlWorklogWriter().write(Worklog.from_entries([self._entry()]), out)
+        record = json.loads(out.read_text(encoding="utf-8").splitlines()[0])
+        assert record["resource"] == "見積書_2026Q2.xlsx"
+        assert record["location"] == "Sheet1"
+        assert record["focus"] == "D列の単価合計を確認しながら"
+
+
 class TestMergerPropagatesContext:
     def test_fields_flow_into_worklog_entry(self) -> None:
         merger = TimelineMerger(ocr_match_tolerance_seconds=1.0)

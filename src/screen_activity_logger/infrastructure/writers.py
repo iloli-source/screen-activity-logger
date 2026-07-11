@@ -20,6 +20,9 @@ class JsonlWorklogWriter:
         payload = {
             "t": str(entry.timestamp),
             "app_guess": entry.app_guess,
+            "resource": entry.resource,
+            "location": entry.location,
+            "focus": entry.focus,
             "ocr": list(entry.ocr_lines),
             "speech": list(entry.speech),
             "action": entry.action,
@@ -40,10 +43,16 @@ class MarkdownWorklogWriter:
         heading = f"## {entry.timestamp}"
         if entry.app_guess:
             heading += f" — {entry.app_guess}"
+        if entry.resource:
+            heading += f" — {entry.resource}"
+            if entry.location:
+                heading += f"（{entry.location}）"
         body = [heading, ""]
         if entry.speech:
             body.extend(f"🗣️ {line}" for line in entry.speech)
             body.append("")
+        if entry.focus:
+            body.append(f"👁 {entry.focus}")
         body.append(entry.action)
         if entry.ocr_lines:
             body.append("")

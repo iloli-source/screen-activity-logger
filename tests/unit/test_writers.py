@@ -45,6 +45,9 @@ class TestJsonlWorklogWriter:
         assert first == {
             "t": "00:12:34",
             "app_guess": "VS Code",
+            "resource": None,
+            "location": None,
+            "focus": None,
             "ocr": ["pytest", "FAILED test_auth.py"],
             "speech": [],
             "action": "テスト失敗箇所をエディタで確認している",
