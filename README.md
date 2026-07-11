@@ -63,6 +63,22 @@ ollama pull qwen3-vl:8b
 #   --diff-threshold 0.02  画面差分によるOCRスキップの閾値
 #   --asr-model <repo>     音声認識モデル（既定: kaiinui/kotoba-whisper-v2.0-mlx）
 #   --no-asr               音声認識を無効化（音声トラックが無い場合は自動スキップ）
+#   --mode meeting         会議動画向け: OCRをキーフレームのみに限定
+```
+
+複数動画は**バッチ2フェーズ処理**（全動画ASR→各動画OCR/VLM。ASRモデルのロードが1回で済む）:
+```bash
+.venv/bin/python -m screen_activity_logger.cli 会議1.mp4 会議2.mp4 --mode meeting -o out/
+# → out/会議1/worklog.md, out/会議2/worklog.md …
+# 注意: N本を別プロセスで並列起動するとASRモデル(約3GB)×Nがメモリを食い潰す（実測済み）。
+#       複数本はこのバッチ機能を使うこと。
+```
+
+Ollama推奨設定（バッチパイプライン向け、コミュニティ実測に基づく）:
+```bash
+export OLLAMA_NUM_PARALLEL=1      # バッチ処理では1が単発レイテンシ最速
+export OLLAMA_FLASH_ATTENTION=1
+export OLLAMA_KV_CACHE_TYPE=q8_0  # KVメモリ約半減（品質はq8が無難）
 ```
 
 音声認識（ASR）を使う場合は追加インストール:
