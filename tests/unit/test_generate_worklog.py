@@ -47,7 +47,9 @@ class FakeSceneDescriber:
     def __init__(self) -> None:
         self.described: list[tuple[Frame, OcrText]] = []
 
-    def describe(self, frame: Frame, ocr: OcrText) -> ActivityDescription:
+    def describe(
+        self, frame: Frame, ocr: OcrText, speech: tuple[str, ...] = ()
+    ) -> ActivityDescription:
         self.described.append((frame, ocr))
         return ActivityDescription(
             timestamp=frame.timestamp,

@@ -37,7 +37,9 @@ _JP_FONT = Path("/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc")
 class FakeDescriber:
     """VLMの代替。キーフレームごとに固定の説明を返す。"""
 
-    def describe(self, frame: Frame, ocr: OcrText) -> ActivityDescription:
+    def describe(
+        self, frame: Frame, ocr: OcrText, speech: tuple[str, ...] = ()
+    ) -> ActivityDescription:
         return ActivityDescription(
             timestamp=frame.timestamp,
             action=f"画面{int(frame.timestamp.seconds)}秒時点の作業",

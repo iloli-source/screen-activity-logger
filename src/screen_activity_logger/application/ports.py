@@ -12,6 +12,7 @@ from screen_activity_logger.domain.models import (
     ActivityDescription,
     Frame,
     OcrText,
+    TranscriptSegment,
     Worklog,
 )
 
@@ -35,9 +36,20 @@ class FrameComparator(Protocol):
 
 
 class SceneDescriber(Protocol):
-    """フレーム画像から「何をしているか」を説明する（VLM層）。"""
+    """フレーム画像から「何をしているか」を説明する（VLM層）。
 
-    def describe(self, frame: Frame, ocr: OcrText) -> ActivityDescription: ...
+    speech: フレーム近傍の発話テキスト（ASR層からのカンニングペーパー）。
+    """
+
+    def describe(
+        self, frame: Frame, ocr: OcrText, speech: tuple[str, ...] = ()
+    ) -> ActivityDescription: ...
+
+
+class SpeechTranscriber(Protocol):
+    """動画の音声を文字起こしする（ASR層）。"""
+
+    def transcribe(self, video_path: Path) -> Sequence[TranscriptSegment]: ...
 
 
 class WorklogWriter(Protocol):

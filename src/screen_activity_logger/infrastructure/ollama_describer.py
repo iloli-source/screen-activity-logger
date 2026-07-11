@@ -19,6 +19,9 @@ _PROMPT_TEMPLATE = """あなたはPC作業の記録係です。このスクリ�
 参考: この画面からOCRで抽出されたテキスト:
 {ocr_text}
 
+参考: この時間帯にユーザーが話していた内容（音声認識）:
+{speech_text}
+
 次のJSONのみを出力してください（説明文・コードフェンス不要）:
 {{"app_guess": "アプリ名 or null", "action": "操作の説明"}}"""
 
@@ -43,13 +46,15 @@ class OllamaSceneDescriber:
         self._model = model
         self._client = client
 
-    def describe(self, frame: Frame, ocr: OcrText) -> ActivityDescription:
+    def describe(
+        self, frame: Frame, ocr: OcrText, speech: tuple[str, ...] = ()
+    ) -> ActivityDescription:
         response = self._get_client().chat(
             model=self._model,
             messages=[
                 {
                     "role": "user",
-                    "content": self._build_prompt(ocr),
+                    "content": self._build_prompt(ocr, speech),
                     "images": [str(frame.path)],
                 }
             ],
@@ -70,10 +75,11 @@ class OllamaSceneDescriber:
         return self._client
 
     @staticmethod
-    def _build_prompt(ocr: OcrText) -> str:
+    def _build_prompt(ocr: OcrText, speech: tuple[str, ...] = ()) -> str:
         lines = ocr.normalized_lines()
         ocr_text = "\n".join(lines) if lines else "(テキストなし)"
-        return _PROMPT_TEMPLATE.format(ocr_text=ocr_text)
+        speech_text = "\n".join(speech) if speech else "(発話なし)"
+        return _PROMPT_TEMPLATE.format(ocr_text=ocr_text, speech_text=speech_text)
 
     @staticmethod
     def _response_content(response: Any) -> str:
