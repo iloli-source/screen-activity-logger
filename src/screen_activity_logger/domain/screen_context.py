@@ -15,6 +15,7 @@ from screen_activity_logger.domain.models import ActivityDescription
 from screen_activity_logger.domain.resource_sanitizer import (
     clean_vlm_resource,
     sanitize_url,
+    strip_location_suffix,
     url_domain,
 )
 
@@ -94,11 +95,15 @@ def enrich_description(
     actionは変更しない。
     """
     ctx = parse_screen_context(ocr_lines)
+    resource = _merge_resource(ctx.resource, desc.resource)
+    location = ctx.location or desc.location
+    if resource is not None:
+        resource = strip_location_suffix(resource, location)
     return replace(
         desc,
         app_guess=ctx.app or desc.app_guess,
-        resource=_merge_resource(ctx.resource, desc.resource),
-        location=ctx.location or desc.location,
+        resource=resource,
+        location=location,
     )
 
 

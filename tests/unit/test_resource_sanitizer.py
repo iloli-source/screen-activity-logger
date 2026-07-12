@@ -9,6 +9,7 @@ import pytest
 from screen_activity_logger.domain.resource_sanitizer import (
     clean_vlm_resource,
     sanitize_url,
+    strip_location_suffix,
 )
 
 # Chromeチュートリアル実データ（200字超・OCR文字化け混じり）
@@ -79,3 +80,34 @@ class TestCleanVlmResource:
 
     def test_none_passes_through(self) -> None:
         assert clean_vlm_resource(None) is None
+
+
+class TestStripLocationSuffix:
+    """R6（Issue #17 S4）: resource末尾の括弧付きlocation重複を剥がす。"""
+
+    def test_strips_half_width_paren_suffix(self) -> None:
+        # 実録画: 見出しが「店舗別売上実績 (Sheet1)（Sheet1）」になっていた
+        assert (
+            strip_location_suffix("店舗別売上実績 (Sheet1)", "Sheet1")
+            == "店舗別売上実績"
+        )
+
+    def test_strips_full_width_paren_suffix(self) -> None:
+        assert (
+            strip_location_suffix("店舗別売上実績（Sheet1）", "Sheet1")
+            == "店舗別売上実績"
+        )
+
+    def test_non_matching_suffix_is_unchanged(self) -> None:
+        assert (
+            strip_location_suffix("見積書.xlsx", "Sheet1") == "見積書.xlsx"
+        )
+
+    def test_location_in_middle_is_unchanged(self) -> None:
+        assert (
+            strip_location_suffix("Sheet1のまとめ資料.xlsx", "Sheet1")
+            == "Sheet1のまとめ資料.xlsx"
+        )
+
+    def test_none_location_is_unchanged(self) -> None:
+        assert strip_location_suffix("見積書.xlsx", None) == "見積書.xlsx"

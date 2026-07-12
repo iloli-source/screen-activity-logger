@@ -73,6 +73,17 @@ class TestEnrichDescription:
         assert enriched.resource == "料金ページ"
         assert enriched.focus == "価格表"
 
+    def test_location_suffix_stripped_from_resource(self) -> None:
+        """R6（Issue #17 S4）: 「(Sheet1)（Sheet1）」の重複を昇格時に解消。"""
+        from screen_activity_logger.domain.screen_context import enrich_description
+
+        vlm_desc = _desc(
+            1.0, "集計中", resource="店舗別売上実績 (Sheet1)", location=None
+        )
+        enriched = enrich_description(vlm_desc, ocr_lines=("Sheet1", "合計"))
+        assert enriched.resource == "店舗別売上実績"
+        assert enriched.location == "Sheet1"
+
     def test_vlm_hallucination_fragment_is_rejected(self) -> None:
         """R5（Issue #17 S3）: OCR沈黙時のVLM幻覚断片は昇格させない。"""
         from screen_activity_logger.domain.screen_context import enrich_description

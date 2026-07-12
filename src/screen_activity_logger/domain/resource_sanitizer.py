@@ -41,6 +41,22 @@ def sanitize_url(url: str) -> str:
     return core[: _MAX_URL_DISPLAY_LENGTH - 1] + "…"
 
 
+def strip_location_suffix(resource: str, location: str | None) -> str:
+    """resource末尾の「(location)」「（location）」接尾辞を剥がす（Issue #17 S4）。
+
+    実録画: VLMがresourceにSheet名を含め、OCRがlocationにも同名を抽出して
+    見出しが「店舗別売上実績 (Sheet1)（Sheet1）」と重複表示された。
+    """
+    if not location:
+        return resource
+    stripped = resource.rstrip()
+    for open_paren, close_paren in (("(", ")"), ("（", "）")):
+        suffix = f"{open_paren}{location}{close_paren}"
+        if stripped.endswith(suffix):
+            return stripped[: -len(suffix)].rstrip()
+    return resource
+
+
 def clean_vlm_resource(value: str | None) -> str | None:
     """VLM由来resourceの品質ゲート（Issue #17 S3）。棄却はNone。
 
