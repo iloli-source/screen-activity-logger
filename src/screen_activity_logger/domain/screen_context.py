@@ -12,7 +12,10 @@ from dataclasses import dataclass, replace
 from typing import Iterable
 
 from screen_activity_logger.domain.models import ActivityDescription
-from screen_activity_logger.domain.resource_sanitizer import sanitize_url
+from screen_activity_logger.domain.resource_sanitizer import (
+    sanitize_url,
+    url_domain,
+)
 
 # ファイル名（拡張子必須で保守的に）
 _FILENAME_PATTERN = re.compile(
@@ -93,9 +96,26 @@ def enrich_description(
     return replace(
         desc,
         app_guess=ctx.app or desc.app_guess,
-        resource=ctx.resource or desc.resource,
+        resource=_merge_resource(ctx.resource, desc.resource),
         location=ctx.location or desc.location,
     )
+
+
+def _merge_resource(
+    ocr_resource: str | None, vlm_resource: str | None
+) -> str | None:
+    """OCRの事実とVLM推測のresourceをマージする（Issue #17）。
+
+    原則はOCR優先。ただしOCR値がURL形で、VLM値がそのドメインを含む場合は
+    VLM値を採る（OCRの事実がVLMの「タイトル＋URL併記」を裏付けた＝豊かな方）。
+    """
+    if ocr_resource is None:
+        return vlm_resource
+    if vlm_resource and _URL_PATTERN.fullmatch(ocr_resource):
+        domain = url_domain(ocr_resource)
+        if domain and domain in vlm_resource:
+            return vlm_resource
+    return ocr_resource
 
 
 def _find_location(lines: tuple[str, ...]) -> str | None:

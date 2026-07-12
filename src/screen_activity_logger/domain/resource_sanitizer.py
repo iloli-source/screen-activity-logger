@@ -10,6 +10,13 @@ from __future__ import annotations
 _MAX_URL_DISPLAY_LENGTH = 60
 
 
+def url_domain(url: str) -> str | None:
+    """URLからドメイン部分を取り出す（スキーム除去→最初の/まで）。"""
+    core = url.split("://", 1)[-1]
+    domain = core.split("/", 1)[0]
+    return domain if "." in domain else None
+
+
 def sanitize_url(url: str) -> str:
     """URLからクエリ・フラグメントを除去し、表示長を制限する。
 

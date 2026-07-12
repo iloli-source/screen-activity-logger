@@ -73,6 +73,37 @@ class TestEnrichDescription:
         assert enriched.resource == "料金ページ"
         assert enriched.focus == "価格表"
 
+    def test_vlm_title_with_url_wins_when_ocr_url_confirms_domain(self) -> None:
+        """R3（Issue #17）: OCRのURLがVLMのタイトル+URL併記を裏付ける場合はVLM値を優先。
+
+        実録画の理想形（Issue #12）を保護する回帰テスト。
+        """
+        from screen_activity_logger.domain.screen_context import enrich_description
+
+        vlm_desc = _desc(
+            1.0,
+            "天気を確認している",
+            resource=(
+                "Yahoo! JAPAN 天気・災害ページ"
+                "（URL：weather.yahoo.co.jp/weather/jp/4410.html）"
+            ),
+        )
+        enriched = enrich_description(
+            vlm_desc,
+            ocr_lines=("weather.yahoo.co.jp/weather/jp/13/4410.html", "Yahoo!"),
+        )
+        assert enriched.resource == vlm_desc.resource  # 豊かな方を採る
+
+    def test_ocr_url_wins_when_vlm_lacks_domain(self) -> None:
+        from screen_activity_logger.domain.screen_context import enrich_description
+
+        vlm_desc = _desc(1.0, "閲覧している", resource="4410.html")
+        enriched = enrich_description(
+            vlm_desc,
+            ocr_lines=("weather.yahoo.co.jp/weather/jp/13/4410.html",),
+        )
+        assert enriched.resource == "weather.yahoo.co.jp/weather/jp/13/4410.html"
+
 
 class TestContextInWriters:
     """Y5: 見出し・👁行・JSONLキーの出力。"""
