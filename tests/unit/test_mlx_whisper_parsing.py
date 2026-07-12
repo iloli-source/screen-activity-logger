@@ -58,6 +58,29 @@ class TestSegmentsFromResult:
         segments = segments_from_result(result)
         assert segments[0].start.seconds == 0.0
 
+    def test_propagates_confidence_metadata(self) -> None:
+        """no_speech_prob / avg_logprob を捨てずに運ぶ（Issue #14）。"""
+        result = {
+            "segments": [
+                {
+                    "start": 0.0,
+                    "end": 1.0,
+                    "text": "発話",
+                    "no_speech_prob": 0.87,
+                    "avg_logprob": -1.23,
+                }
+            ]
+        }
+        segments = segments_from_result(result)
+        assert segments[0].no_speech_prob == 0.87
+        assert segments[0].avg_logprob == -1.23
+
+    def test_missing_metadata_keys_give_none(self) -> None:
+        result = {"segments": [{"start": 0.0, "end": 1.0, "text": "発話"}]}
+        segments = segments_from_result(result)
+        assert segments[0].no_speech_prob is None
+        assert segments[0].avg_logprob is None
+
 
 class TestParseAudioStreamPresence:
     def test_detects_audio_stream(self) -> None:

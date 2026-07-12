@@ -34,9 +34,15 @@ def segments_from_result(result: Any) -> tuple[TranscriptSegment, ...]:
                 start=VideoTimestamp(seconds=start),
                 end=VideoTimestamp(seconds=end),
                 text=text,
+                no_speech_prob=_optional_float(raw.get("no_speech_prob")),
+                avg_logprob=_optional_float(raw.get("avg_logprob")),
             )
         )
     return tuple(segments)
+
+
+def _optional_float(value: Any) -> float | None:
+    return None if value is None else float(value)
 
 
 class MlxWhisperTranscriber:
