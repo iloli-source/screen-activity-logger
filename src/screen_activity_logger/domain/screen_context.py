@@ -12,6 +12,7 @@ from dataclasses import dataclass, replace
 from typing import Iterable
 
 from screen_activity_logger.domain.models import ActivityDescription
+from screen_activity_logger.domain.resource_sanitizer import sanitize_url
 
 # ファイル名（拡張子必須で保守的に）
 _FILENAME_PATTERN = re.compile(
@@ -56,7 +57,7 @@ def _find_app_and_resource(
 ) -> tuple[str | None, str | None]:
     for line in lines:
         file_match = _FILENAME_PATTERN.search(line)
-        if file_match:
+        if file_match and not _is_inside_url(line, file_match):
             resource = file_match.group(1)
             title_match = _TITLE_BAR_PATTERN.match(line.strip())
             app = title_match.group(2).strip() if title_match else None
@@ -64,8 +65,20 @@ def _find_app_and_resource(
     for line in lines:
         url_match = _URL_PATTERN.search(line)
         if url_match:
-            return None, url_match.group(1)
+            return None, sanitize_url(url_match.group(1))
     return None, None
+
+
+def _is_inside_url(line: str, file_match: re.Match) -> bool:
+    """ファイル名マッチがURLのスパン内にある（=URLの末尾断片）か。
+
+    Issue #17 S1: 「.../4410.html」の断片をファイル名と誤認しないための判定。
+    タイトルバーのファイル名（URL外）はURLより優先という現行仕様は維持する。
+    """
+    return any(
+        m.start() <= file_match.start() and file_match.end() <= m.end()
+        for m in _URL_PATTERN.finditer(line)
+    )
 
 
 def enrich_description(
