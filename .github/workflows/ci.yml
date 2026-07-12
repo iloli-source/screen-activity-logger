@@ -7,13 +7,18 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
+      # ffmpeg: apt/chocoより速くキャッシュも効くアクションで両OS共通化
       - name: Install ffmpeg
-        run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v3
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -22,7 +27,7 @@ jobs:
           cache-dependency-glob: "**/pyproject.toml"
 
       - name: Install dependencies
-        # PaddleOCRは遅延import設計のため、高速テストには重い実体が不要。
+        # PaddleOCR/ASRバックエンドは遅延import設計のため、高速テストには重い実体が不要。
         # --no-deps でパッケージ本体のみ入れ、テスト用依存を個別に追加する。
         # ollamaクライアントは軽量（HTTPクライアントのみ）かつ
         # test_lazy_client_is_created_with_timeout がimportするため入れる。
@@ -33,7 +38,8 @@ jobs:
 
       - name: "Run tests (fast: unit + ffmpeg integration)"
         # slowマーカー（PaddleOCRモデルDL・実VLM・e2e）はローカル/実機で実行する
-        run: .venv/bin/pytest -m "not slow" --cov --cov-report=term --cov-fail-under=70
+        # uv run: .venv/bin/ のPOSIXパスを排除しWindowsでも同一コマンドにする
+        run: uv run --no-sync pytest -m "not slow" --cov --cov-report=term --cov-fail-under=70
 
       # 注: フルスイート（OCR/e2e含む）はM4実機で `.venv/bin/pytest --cov` を実行。
       # macOSランナーはプライベートリポジトリでは課金が重いためCIでは回さない。
