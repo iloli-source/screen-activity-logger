@@ -4,7 +4,12 @@
 観測した実データをそのまま使う。
 """
 
-from screen_activity_logger.domain.resource_sanitizer import sanitize_url
+import pytest
+
+from screen_activity_logger.domain.resource_sanitizer import (
+    clean_vlm_resource,
+    sanitize_url,
+)
 
 # Chromeチュートリアル実データ（200字超・OCR文字化け混じり）
 _GARBAGE_SEARCH_URL = (
@@ -38,3 +43,39 @@ class TestSanitizeUrl:
 
     def test_trims_trailing_punctuation(self) -> None:
         assert sanitize_url("example.com/page.") == "example.com/page"
+
+
+class TestCleanVlmResource:
+    """R4（Issue #17 S3）: VLM由来resourceの品質ゲート。実録画の実文字列を使用。"""
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            'Web page titled "Ureya hasde"',  # 英語ボイラープレート（幻覚シグナル）
+            "A web page",
+            "Screenshot of desktop",
+            "Untitled document",
+            "Browser tab",
+            "IRW",   # 低情報断片（OCRゴミの復唱）
+            "EZEO",
+        ],
+    )
+    def test_rejects_hallucination_patterns(self, value: str) -> None:
+        assert clean_vlm_resource(value) is None
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "Zoom Meeting",          # 正当な英語リソース名
+            "料金ページ",             # 日本語は無条件で通す
+            "a.py",                  # 短くても区切り記号（.）があれば通す
+            "tl;dv MINOTETAKER",     # 実録画で正しく抽出できていた値
+            "店舗別売上実績.xlsx",
+            "Yahoo! JAPAN 天気・災害ページ（URL：weather.yahoo.co.jp/…）",
+        ],
+    )
+    def test_keeps_legitimate_resources(self, value: str) -> None:
+        assert clean_vlm_resource(value) == value
+
+    def test_none_passes_through(self) -> None:
+        assert clean_vlm_resource(None) is None
