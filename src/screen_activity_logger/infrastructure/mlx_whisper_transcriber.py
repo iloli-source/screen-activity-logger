@@ -6,12 +6,12 @@
 
 from __future__ import annotations
 
-import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
 
 from screen_activity_logger.domain.models import TranscriptSegment, VideoTimestamp
+from screen_activity_logger.infrastructure.audio_extraction import extract_audio_wav
 
 DEFAULT_ASR_MODEL = "kaiinui/kotoba-whisper-v2.0-mlx"
 
@@ -54,21 +54,9 @@ class MlxWhisperTranscriber:
     def transcribe(self, video_path: Path) -> tuple[TranscriptSegment, ...]:
         with tempfile.TemporaryDirectory(prefix="sal-audio-") as tmp:
             wav_path = Path(tmp) / "audio.wav"
-            self._extract_audio(video_path, wav_path)
+            extract_audio_wav(video_path, wav_path)
             result = self._run_whisper(wav_path)
         return segments_from_result(result)
-
-    @staticmethod
-    def _extract_audio(video_path: Path, wav_path: Path) -> None:
-        subprocess.run(
-            [
-                "ffmpeg", "-y", "-i", str(video_path),
-                "-vn", "-ac", "1", "-ar", "16000",
-                str(wav_path),
-            ],
-            check=True,
-            capture_output=True,
-        )
 
     def _run_whisper(self, wav_path: Path) -> Any:
         import mlx_whisper
