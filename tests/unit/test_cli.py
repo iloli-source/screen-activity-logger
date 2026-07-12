@@ -107,6 +107,31 @@ class TestBuildUseCase:
         )
         assert use_case.ocr_keyframes_only is False
 
+    def test_wires_speech_filter(self, tmp_path: Path) -> None:
+        """F4: ASR幻覚フィルタが配線される（Issue #14）。"""
+        from screen_activity_logger.domain.speech_filter import SpeechFilterConfig
+
+        use_case = build_use_case(
+            fps=0.5,
+            scene_threshold=0.08,
+            model="qwen3-vl:8b",
+            ocr_tolerance_seconds=2.0,
+            workdir=tmp_path,
+            speech_filter=SpeechFilterConfig(no_speech_threshold=0.7),
+        )
+        assert use_case.speech_filter is not None
+        assert use_case.speech_filter.no_speech_threshold == 0.7
+
+    def test_default_has_no_speech_filter(self, tmp_path: Path) -> None:
+        use_case = build_use_case(
+            fps=0.5,
+            scene_threshold=0.08,
+            model="qwen3-vl:8b",
+            ocr_tolerance_seconds=2.0,
+            workdir=tmp_path,
+        )
+        assert use_case.speech_filter is None
+
     def test_wires_frame_comparator_and_ocr_tier(self, tmp_path: Path) -> None:
         """Cycle M: 差分スキップとOCR tierがCLIから設定できる。"""
         from screen_activity_logger.infrastructure.frame_comparator import (

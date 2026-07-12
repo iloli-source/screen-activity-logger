@@ -11,6 +11,7 @@ from screen_activity_logger.application.use_cases import (
     GenerateWorklog,
 )
 from screen_activity_logger.domain.services import TimelineMerger
+from screen_activity_logger.domain.speech_filter import SpeechFilterConfig
 from screen_activity_logger.domain.vlm_gate import VlmGateConfig
 from screen_activity_logger.infrastructure.ffmpeg_extractor import (
     FfmpegFrameExtractor,
@@ -51,12 +52,14 @@ def build_use_case(
     asr_model: str | None = None,
     ocr_keyframes_only: bool = False,
     vlm_gate: VlmGateConfig | None = None,
+    speech_filter: SpeechFilterConfig | None = None,
 ) -> GenerateWorklog:
     """設定値から全アダプタを組み立てたユースケースを返す。
 
     asr_model: Noneなら音声認識を無効化する。
     ocr_keyframes_only: 会議モード（OCRをキーフレームに限定）。
     vlm_gate: VLM間引きゲート（Noneで無効＝screencast既定）。
+    speech_filter: ASR幻覚フィルタ（Noneで無効。CLI経由では既定ON）。
     """
     return GenerateWorklog(
         frame_extractor=FfmpegFrameExtractor(
@@ -71,6 +74,7 @@ def build_use_case(
         ),
         ocr_keyframes_only=ocr_keyframes_only,
         vlm_gate=vlm_gate,
+        speech_filter=speech_filter,
     )
 
 
@@ -126,6 +130,18 @@ def main(argv: list[str] | None = None) -> int:
         "--vlm-max-gap", type=float, default=120.0,
         help="VLM強制実行の最大間隔秒（安全弁、既定: 120）",
     )
+    parser.add_argument(
+        "--asr-no-speech-prob", type=float, default=0.6,
+        help="幻覚フィルタ: no_speech_probがこれを超えると除去候補（既定: 0.6）",
+    )
+    parser.add_argument(
+        "--asr-avg-logprob", type=float, default=-1.0,
+        help="幻覚フィルタ: avg_logprobがこれ未満なら除去候補（既定: -1.0）",
+    )
+    parser.add_argument(
+        "--no-asr-filter", action="store_true",
+        help="ASR幻覚フィルタを無効化する（デバッグ用）",
+    )
     args = parser.parse_args(argv)
 
     for video in args.videos:
@@ -157,6 +173,15 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 if args.mode == "meeting"
                 else None
+            ),
+            # 幻覚は両モードで起きるため既定ON（screencastのナレーションでも発生）
+            speech_filter=(
+                None
+                if args.no_asr_filter
+                else SpeechFilterConfig(
+                    no_speech_threshold=args.asr_no_speech_prob,
+                    logprob_threshold=args.asr_avg_logprob,
+                )
             ),
         )
         if len(args.videos) == 1:
