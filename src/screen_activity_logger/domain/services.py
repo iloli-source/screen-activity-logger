@@ -18,6 +18,21 @@ from screen_activity_logger.domain.models import (
 )
 
 
+def aggregate_durations_by_app(worklog: Worklog) -> tuple[tuple[str, float], ...]:
+    """アプリ別の滞在時間合計（秒、降順）を返す（Issue #18）。
+
+    duration不明のエントリは除外。app_guess Noneは「（不明）」に集約。
+    """
+    totals: dict[str, float] = {}
+    for entry in worklog.entries:
+        duration = entry.duration_seconds
+        if duration is None or duration <= 0:
+            continue
+        app = entry.app_guess or "（不明）"
+        totals[app] = totals.get(app, 0.0) + duration
+    return tuple(sorted(totals.items(), key=lambda item: item[1], reverse=True))
+
+
 @dataclass(frozen=True)
 class TimelineMerger:
     """OCRテキスト・発話をタイムスタンプで突合し、重複を除去する。

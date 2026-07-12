@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from screen_activity_logger.domain.models import Worklog, WorklogEntry
+from screen_activity_logger.domain.services import aggregate_durations_by_app
 
 # 全角括弧・空白を正規化して包含判定する（Issue #17 S4の表示ガード）
 _NORMALIZE_TABLE = str.maketrans({"（": "(", "）": ")", "　": " "})
@@ -70,7 +71,22 @@ class MarkdownWorklogWriter:
     def write(self, worklog: Worklog, output_path: Path) -> None:
         sections = [self._to_section(entry) for entry in worklog.entries]
         text = "# 作業ログ\n\n" + "\n".join(sections)
+        summary = self._app_summary(worklog)
+        if summary:
+            text += summary
         output_path.write_text(text, encoding="utf-8")
+
+    @staticmethod
+    def _app_summary(worklog: Worklog) -> str:
+        """アプリ別滞在時間のサマリーテーブル（duration皆無なら空、Issue #18）。"""
+        totals = aggregate_durations_by_app(worklog)
+        if not totals:
+            return ""
+        lines = ["## アプリ別滞在時間", "", "| アプリ | 滞在時間 |", "|---|---|"]
+        lines.extend(
+            f"| {app} | {_format_duration_ja(seconds)} |" for app, seconds in totals
+        )
+        return "\n" + "\n".join(lines) + "\n"
 
     @staticmethod
     def _to_section(entry: WorklogEntry) -> str:

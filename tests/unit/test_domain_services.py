@@ -165,3 +165,50 @@ class TestTimelineMerger:
         assert entry.resource == "pull/123"
         assert entry.location == "Files changed"
         assert entry.focus == "diff表示"
+
+
+class TestAggregateDurationsByApp:
+    """T6（Issue #18）: アプリ別滞在時間の集計。"""
+
+    def _entry(self, app, start, end):
+        from screen_activity_logger.domain.models import WorklogEntry
+
+        return WorklogEntry(
+            timestamp=VideoTimestamp(seconds=start),
+            action="作業",
+            app_guess=app,
+            ocr_lines=(),
+            end_timestamp=(
+                VideoTimestamp(seconds=end) if end is not None else None
+            ),
+        )
+
+    def test_aggregates_descending(self) -> None:
+        from screen_activity_logger.domain.models import Worklog
+        from screen_activity_logger.domain.services import (
+            aggregate_durations_by_app,
+        )
+
+        worklog = Worklog.from_entries(
+            [
+                self._entry("Excel", 0.0, 100.0),
+                self._entry("Chrome", 100.0, 400.0),
+                self._entry("Excel", 400.0, 450.0),
+                self._entry(None, 450.0, 500.0),
+                self._entry("VS Code", 500.0, None),  # duration不明→除外
+            ]
+        )
+        assert aggregate_durations_by_app(worklog) == (
+            ("Chrome", 300.0),
+            ("Excel", 150.0),
+            ("（不明）", 50.0),
+        )
+
+    def test_empty_when_no_durations(self) -> None:
+        from screen_activity_logger.domain.models import Worklog
+        from screen_activity_logger.domain.services import (
+            aggregate_durations_by_app,
+        )
+
+        worklog = Worklog.from_entries([self._entry("Excel", 0.0, None)])
+        assert aggregate_durations_by_app(worklog) == ()

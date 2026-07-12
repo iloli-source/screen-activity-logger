@@ -186,3 +186,28 @@ class TestDwellTimeOutput:
         out = tmp_path / "worklog.md"
         MarkdownWorklogWriter().write(Worklog.from_entries([entry]), out)
         assert "## 00:00:10\n" in out.read_text(encoding="utf-8")
+
+
+class TestAppSummaryTable:
+    """T6（Issue #18）: アプリ別滞在時間サマリー。"""
+
+    def test_summary_table_is_rendered(self, tmp_path: Path) -> None:
+        entries = [
+            WorklogEntry(
+                timestamp=VideoTimestamp(seconds=0.0),
+                action="編集",
+                app_guess="Excel",
+                ocr_lines=(),
+                end_timestamp=VideoTimestamp(seconds=450.0),
+            ),
+        ]
+        out = tmp_path / "worklog.md"
+        MarkdownWorklogWriter().write(Worklog.from_entries(entries), out)
+        text = out.read_text(encoding="utf-8")
+        assert "## アプリ別滞在時間" in text
+        assert "| Excel | 7分30秒 |" in text
+
+    def test_no_summary_without_durations(self, tmp_path: Path) -> None:
+        out = tmp_path / "worklog.md"
+        MarkdownWorklogWriter().write(_worklog(), out)  # end無しエントリのみ
+        assert "アプリ別滞在時間" not in out.read_text(encoding="utf-8")
