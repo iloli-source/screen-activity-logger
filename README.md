@@ -29,7 +29,7 @@ PC画面を録画した動画（MP4）を入力に、**完全ローカル**で *
 | **フレーム抽出** | ffmpeg（fps均等サンプリング＋シーン変化検出、長辺1024px縮小） | 視覚トークン超過の実測に基づく |
 | **OCR層** | PaddleOCR PP-OCRv6 tiny/small/medium（日本語、CPU） | 画面差分によるスキップ＋会議モードでキーフレーム限定 |
 | **VLM層** | Qwen3-VL:8B（Ollama、タイムアウト＋フォールバック付き） | 構造化5フィールド出力（app/resource/location/focus/action） |
-| **ASR層** | kotoba-whisper v2.0 MLX版（mlx-whisper、M4 GPU） | 日本語特化。音声トラックなしは自動スキップ |
+| **ASR層** | kotoba-whisper v2.0（Mac: MLX / Windows・Linux: faster-whisper、自動選択） | 日本語特化。音声トラックなしは自動スキップ |
 | **VLMゲート** | OCRトークンJaccard（meetingモード） | 話者切替のVLM無駄撃ちを抑制（3者設計協議で採択、Issue #13） |
 | **出力** | JSONL（機械用・一次情報保持）＋Markdown（人間用） | |
 | **活用層（将来）** | Ruri v3 + Faiss / Qwen3-VL-Embedding | 意味検索・分類・RAG（Issue #5） |
@@ -75,7 +75,9 @@ ollama pull qwen3-vl:8b
 #   --model qwen3-vl:8b       OllamaのVLMモデル
 #   --ocr-tier small          OCRモデル規模 tiny/small/medium（既定small）
 #   --diff-threshold 0.02     画面差分によるOCRスキップの閾値
-#   --asr-model <repo>        音声認識モデル（既定: kaiinui/kotoba-whisper-v2.0-mlx）
+#   --asr-backend auto        ASRバックエンド auto/mlx/faster（auto: Apple Silicon→mlx、それ以外→faster）
+#   --asr-model <repo>        音声認識モデル（未指定時はバックエンド既定:
+#                             mlx=kaiinui/kotoba-whisper-v2.0-mlx / faster=kotoba-tech/kotoba-whisper-v2.0-faster）
 #   --no-asr                  音声認識を無効化（音声トラックなしは自動スキップ）
 #   --vlm-skip-threshold 0.85 VLMゲートのJaccard閾値（meeting時）
 #   --vlm-min-gap 10          VLM呼び出しの最小間隔秒（debounce）
@@ -115,6 +117,29 @@ export OLLAMA_KV_CACHE_TYPE=q8_0  # KVメモリ約半減（品質はq8が無難�
 .venv/bin/pytest --cov           # 全テスト＋カバレッジ（OCR/ASR/e2e含む）
 ```
 
+### Windowsでのセットアップ
+
+```powershell
+# ffmpeg（wingetまたはchoco）
+winget install Gyan.FFmpeg
+# Ollama Windows版: https://ollama.com/download/windows からインストール
+ollama pull qwen3-vl:8b
+
+uv venv -p 3.12 .venv
+uv pip install -e . ; uv pip install -e ".[dev]" ; uv pip install -e ".[asr-faster]"
+# 実行（--asr-backend autoが自動でfasterに解決される）
+uv run python -m screen_activity_logger.cli 録画.mp4 -o out/
+```
+
+- ASRは faster-whisper（CTranslate2）が **CUDA有無を自動判別**。NVIDIA GPU利用時のみ `pip install nvidia-cublas-cu12 nvidia-cudnn-cu12` を追加（CPUなら不要、int8で実用速度）
+- PaddleOCR・Ollama・ffmpeg・出力層はOS共通
+
+### 「Macと同じ結果」の定義（Issue #16）
+
+1. **構造的同一（保証）**: domain/application層にOS・バックエンド分岐は1バイトもない。差し替わるのはASRアダプタ1個のみで、セグメント正規化は共通純粋関数（`asr_segments.build_segment`）に一元化 → **同一のセグメント列が入れば下流の出力はビット同一**
+2. **意味的同等（実測）**: mlxとfasterは同一モデル（kotoba-whisper v2.0）の変換版だが、トランスクリプトは完全一致しない。差はWhisper自体の実行毎ゆらぎと同オーダー（Issue #16の実測記録参照）
+3. **既知の差分**: faster側は `condition_on_previous_text=False`（kotoba公式推奨・幻覚連鎖の抑制）、`chunk_length=15`、beam_size=5。いずれも品質中立〜改善方向
+
 ## 開発状況（Issue駆動）
 
 進行状況は [GitHub Issues](https://github.com/sivachi/screen-activity-logger/issues) が正。
@@ -127,13 +152,13 @@ export OLLAMA_KV_CACHE_TYPE=q8_0  # KVメモリ約半減（品質はq8が無難�
 
 ## 動作要件
 
-**ターゲット環境（実測 2026-07-11）**: MacBook Air / Apple M4 / 24GBユニファイドメモリ / macOS 26.5.2
+**開発環境（実測 2026-07-11）**: MacBook Air / Apple M4 / 24GBユニファイドメモリ / macOS 26.5.2
+**Windows/Linux** も対応（ASRはfaster-whisperに自動切替、Issue #16。BEST_PRACTICES.md §0.2 参照）
 
 - Python 3.12（venvは `uv venv -p 3.12`）
 - ffmpeg（フレーム抽出・音声抽出・ffprobe）
 - Ollama 0.30以降（qwen3-vl:8b）
-- 主要依存: `paddleocr`+`paddlepaddle`（CPU）, `ollama`, `pillow`, （ASR時）`mlx-whisper`
-- ※ Apple SiliconのためCUDA系（AWQ/bitsandbytes/paddlepaddle-gpu）は使用しない。NVIDIA GPU機で動かす場合は BEST_PRACTICES.md §4 のCUDA構成を参照
+- 主要依存: `paddleocr`+`paddlepaddle`（CPU）, `ollama`, `pillow`, （ASR時）`mlx-whisper` または `faster-whisper`
 
 ## プライバシー
 

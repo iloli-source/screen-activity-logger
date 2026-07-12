@@ -17,6 +17,8 @@
 
 ### 0.1 ターゲット環境（実測 2026-07-11）
 
+> Apple Silicon構成。**Windows/NVIDIA構成は §0.2** を参照（Issue #16でクロスプラットフォーム対応済み）。
+
 開発機を `system_profiler` で実測した結果、**CUDA GPU機ではなく Apple Silicon** と判明。構成前提を以下に更新する。
 
 | 項目 | 実測値 | 影響 |
@@ -34,6 +36,24 @@ ffmpeg(済) + PaddleOCR PP-OCRv6 tiny/small(CPU) + Qwen3-VL-8B Q4(Ollama or mlx-
 - ランタイムは **Ollama / llama.cpp(Metal) / mlx-vlm** の三択（CUDA系は全て対象外）
 - **mlx-vlm** はQwen3-VLでメモリ10GB→5.5GB・約2倍速の報告あり（Mac最速ルート、§4参照）
 - **PP-OCRv6 は論文にApple M4実測あり**（tiny 0.96秒/画像、6.1倍速）→ CPU動作で実用十分
+
+### 0.2 Windows / NVIDIA 構成（Issue #16 対応済み）
+
+差し替わるのは **ASRバックエンド1層のみ**。他（ffmpeg/PaddleOCR/Ollama/出力）はOS共通。
+
+| 層 | Apple Silicon（§0.1） | Windows / Linux |
+|----|----------------------|------------------|
+| ASR | kotoba-whisper v2.0 **MLX版**（mlx-whisper、Metal） | 同モデルの **CTranslate2版**（faster-whisper、`kotoba-tech/kotoba-whisper-v2.0-faster`） |
+| ASRデバイス | M4 GPU | **CUDA自動判別**（未導入ならCPU int8にフォールバック、クラッシュなし） |
+| OCR | PaddleOCR（CPU） | 同じ |
+| VLM | Ollama（Metal） | Ollama Windows版（CUDA） |
+| フレーム抽出 | ffmpeg | 同じ（winget/chocoで導入） |
+
+- CLI `--asr-backend auto` がプラットフォームを自動判別（Darwin+arm64→mlx、それ以外→faster）。明示指定も可
+- インストール: `uv pip install -e ".[asr-faster]"`（メタextra `.[asr]` は環境マーカーで自動選択）
+- **NVIDIA GPUでfaster-whisperを使う場合のみ** `nvidia-cublas-cu12` / `nvidia-cudnn-cu12` を追加（CUDA 12 / cuDNN 9）。CPUなら追加不要
+- セグメント正規化はバックエンド共通の純粋関数（`infrastructure/asr_segments.py`）に一元化。幻覚フィルタ・VLMゲート・domain/application層はOS分岐ゼロ → 「同じ結果」の構造的担保（README参照）
+- CI: ubuntu-latest + windows-latest のマトリクスでfast testsを常時実行
 
 ---
 

@@ -103,7 +103,8 @@ class TestOllamaSceneDescriber:
 
         call = client.calls[-1]
         assert call["model"] == "qwen3-vl:8b"
-        assert call["messages"][0]["images"] == ["/tmp/frame.png"]
+        # str(Path)はWindowsで区切りが変わるため期待値も正規化する
+        assert call["messages"][0]["images"] == [str(Path("/tmp/frame.png"))]
         assert call["think"] is False
 
     def test_parses_context_fields_from_json(self) -> None:
