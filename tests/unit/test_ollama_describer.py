@@ -91,7 +91,7 @@ class TestOllamaSceneDescriber:
 
         describer.describe(_frame(), _ocr("pytest", "FAILED test_auth.py"))
 
-        prompt = client.calls[0]["messages"][0]["content"]
+        prompt = client.calls[-1]["messages"][0]["content"]
         assert "pytest" in prompt
         assert "FAILED test_auth.py" in prompt
 
@@ -101,7 +101,7 @@ class TestOllamaSceneDescriber:
 
         describer.describe(_frame(), _ocr())
 
-        call = client.calls[0]
+        call = client.calls[-1]
         assert call["model"] == "qwen3-vl:8b"
         assert call["messages"][0]["images"] == ["/tmp/frame.png"]
         assert call["think"] is False
@@ -137,7 +137,7 @@ class TestOllamaSceneDescriber:
 
         describer.describe(_frame(), _ocr())
 
-        prompt = client.calls[0]["messages"][0]["content"]
+        prompt = client.calls[-1]["messages"][0]["content"]
         assert "resource" in prompt
         assert "location" in prompt
         assert "focus" in prompt
@@ -185,4 +185,65 @@ class TestOllamaSceneDescriber:
 
         describer.describe(_frame(), _ocr())
 
-        assert client.calls[0]["options"]["num_ctx"] >= 8192
+        assert client.calls[-1]["options"]["num_ctx"] >= 8192
+
+
+class TestOllamaWarmUp:
+    """G1: 初回describe直前の遅延ウォームアップ（Issue #14）。
+
+    Ollamaコールドスタート（モデルロード込み）が300秒タイムアウトを超え、
+    先頭フレームの説明がフォールバックになる問題への対策。
+    """
+
+    def test_first_describe_sends_lightweight_warmup_before_real_call(self) -> None:
+        client = FakeOllamaClient('{"app_guess": null, "action": "a"}')
+        describer = OllamaSceneDescriber(model="qwen3-vl:8b", client=client)
+
+        describer.describe(_frame(), _ocr())
+
+        assert len(client.calls) == 2
+        warmup = client.calls[0]
+        assert warmup["model"] == "qwen3-vl:8b"
+        assert "images" not in warmup["messages"][0]  # 画像なしの軽量プロンプト
+        # num_ctxが本番と異なるとOllamaがモデルを再ロードして無意味になる
+        assert warmup["options"]["num_ctx"] == client.calls[1]["options"]["num_ctx"]
+
+    def test_warmup_happens_only_once(self) -> None:
+        client = FakeOllamaClient('{"app_guess": null, "action": "a"}')
+        describer = OllamaSceneDescriber(model="qwen3-vl:8b", client=client)
+
+        describer.describe(_frame(), _ocr())
+        describer.describe(_frame(), _ocr())
+
+        assert len(client.calls) == 3  # warmup + describe×2
+
+    def test_warmup_failure_does_not_break_describe(self) -> None:
+        """ウォームアップがタイムアウトしてもサーバ側のロードは継続する。"""
+
+        class WarmupFailingClient:
+            def __init__(self) -> None:
+                self.calls: list[dict[str, Any]] = []
+
+            def chat(self, **kwargs: Any) -> dict[str, Any]:
+                self.calls.append(kwargs)
+                if len(self.calls) == 1:
+                    raise TimeoutError("cold start read timeout")
+                return {"message": {"content": '{"app_guess": null, "action": "作業中"}'}}
+
+        client = WarmupFailingClient()
+        describer = OllamaSceneDescriber(model="qwen3-vl:8b", client=client)
+
+        desc = describer.describe(_frame(), _ocr())
+
+        assert desc.action == "作業中"  # 本番呼び出しは正常応答
+        assert len(client.calls) == 2
+
+    def test_warmup_and_describe_request_keep_alive(self) -> None:
+        """バッチ中（動画間のOCRフェーズ等）の再アンロードを防ぐ。"""
+        client = FakeOllamaClient('{"app_guess": null, "action": "a"}')
+        describer = OllamaSceneDescriber(model="qwen3-vl:8b", client=client)
+
+        describer.describe(_frame(), _ocr())
+
+        assert client.calls[0]["keep_alive"] == "30m"
+        assert client.calls[1]["keep_alive"] == "30m"

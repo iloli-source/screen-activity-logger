@@ -245,5 +245,5 @@ class TestSpeechInVlmPrompt:
             OcrText(timestamp=VideoTimestamp(seconds=1.0), lines=()),
             speech=("このバグの原因を説明します",),
         )
-        prompt = client.calls[0]["messages"][0]["content"]
+        prompt = client.calls[-1]["messages"][0]["content"]
         assert "このバグの原因を説明します" in prompt

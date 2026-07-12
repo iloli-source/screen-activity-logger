@@ -39,6 +39,10 @@ _NUM_CTX = 8192
 # 無限待ちになりバッチ全体が停止するため必須（実会議10本バッチで発覚）
 DEFAULT_TIMEOUT_SECONDS = 300.0
 
+# バッチ中（動画間のOCRフェーズ等）にOllama既定5分でアンロードされ、
+# 再ロードのコールドスタートが繰り返されるのを防ぐ
+_KEEP_ALIVE = "30m"
+
 
 class ChatClient(Protocol):
     """ollama.Client互換の最小インターフェース。"""
@@ -58,10 +62,12 @@ class OllamaSceneDescriber:
         self._model = model
         self._client = client
         self._timeout_seconds = timeout_seconds
+        self._warmed = False
 
     def describe(
         self, frame: Frame, ocr: OcrText, speech: tuple[str, ...] = ()
     ) -> ActivityDescription:
+        self._ensure_warm()
         try:
             response = self._get_client().chat(
                 model=self._model,
@@ -74,6 +80,7 @@ class OllamaSceneDescriber:
                 ],
                 think=False,
                 options={"num_ctx": _NUM_CTX},
+                keep_alive=_KEEP_ALIVE,
             )
         except Exception as error:  # noqa: BLE001 — バッチ継続を優先しログに残す
             print(
@@ -95,6 +102,32 @@ class OllamaSceneDescriber:
             location=fields["location"],
             focus=fields["focus"],
         )
+
+    def _ensure_warm(self) -> None:
+        """初回describe直前の遅延ウォームアップ（Issue #14）。
+
+        コールドスタート（モデルロード込み）は画像推論と合わさると300秒
+        タイムアウトを超え、先頭フレームがフォールバックになる。画像なしの
+        軽量プロンプトでロードだけ先に済ませる。num_ctxは本番と一致必須
+        （異なるとOllamaがモデルを再ロードして無意味になる）。
+        """
+        if self._warmed:
+            return
+        # 失敗しても再試行しない（サーバ停止時に300秒×N回の待ちを防ぐ）
+        self._warmed = True
+        try:
+            self._get_client().chat(
+                model=self._model,
+                messages=[{"role": "user", "content": "ok"}],
+                think=False,
+                options={"num_ctx": _NUM_CTX},
+                keep_alive=_KEEP_ALIVE,
+            )
+        except Exception as error:  # noqa: BLE001
+            # タイムアウトしてもサーバ側のロードは継続する → 本番呼び出しへ続行
+            print(
+                f"VLMウォームアップ失敗（続行）: {type(error).__name__}", flush=True
+            )
 
     def _get_client(self) -> ChatClient:
         if self._client is None:
