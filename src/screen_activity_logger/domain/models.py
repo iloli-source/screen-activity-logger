@@ -73,11 +73,17 @@ class ActivityDescription:
 
 @dataclass(frozen=True)
 class TranscriptSegment:
-    """音声認識による発話1区間。"""
+    """音声認識による発話1区間。
+
+    no_speech_prob / avg_logprob はWhisperの30秒デコード窓単位の信頼度
+    （同一窓内の全セグメントが共有）。幻覚フィルタ（Issue #14）の判断材料。
+    """
 
     start: VideoTimestamp
     end: VideoTimestamp
     text: str
+    no_speech_prob: float | None = None
+    avg_logprob: float | None = None
 
     def __post_init__(self) -> None:
         if self.end < self.start:
