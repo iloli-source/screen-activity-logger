@@ -3,6 +3,7 @@
 from screen_activity_logger.domain.models import (
     ActivityDescription,
     OcrText,
+    TranscriptSegment,
     VideoTimestamp,
 )
 from screen_activity_logger.domain.services import TimelineMerger
@@ -84,3 +85,30 @@ class TestTimelineMerger:
             ocr_texts=[],
         )
         assert [e.timestamp.seconds for e in worklog.entries] == [10.0, 30.0]
+
+    def test_attach_speech_preserves_context_fields(self) -> None:
+        """発話紐付けで resource/location/focus が消えない（👁行消失バグの回帰）。"""
+        merger = TimelineMerger(ocr_match_tolerance_seconds=1.0)
+        description = ActivityDescription(
+            timestamp=VideoTimestamp(seconds=10.0),
+            action="コードレビュー",
+            app_guess="GitHub",
+            resource="pull/123",
+            location="Files changed",
+            focus="diff表示",
+        )
+        segment = TranscriptSegment(
+            start=VideoTimestamp(seconds=11.0),
+            end=VideoTimestamp(seconds=12.0),
+            text="ここを直しました",
+        )
+        worklog = merger.merge(
+            descriptions=[description],
+            ocr_texts=[],
+            transcript_segments=[segment],
+        )
+        entry = worklog.entries[0]
+        assert entry.speech == ("ここを直しました",)
+        assert entry.resource == "pull/123"
+        assert entry.location == "Files changed"
+        assert entry.focus == "diff表示"

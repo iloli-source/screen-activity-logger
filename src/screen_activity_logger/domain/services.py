@@ -5,7 +5,7 @@ TimelineMerger: OCR結果・VLM説明・発話を時系列で統合しWorklogを
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterable, Sequence
 
 from screen_activity_logger.domain.models import (
@@ -105,13 +105,6 @@ class TimelineMerger:
                 for seg in ordered_segments
                 if window_start <= seg.start.seconds < window_end
             )
-            result.append(
-                WorklogEntry(
-                    timestamp=entry.timestamp,
-                    action=entry.action,
-                    app_guess=entry.app_guess,
-                    ocr_lines=entry.ocr_lines,
-                    speech=speech,
-                )
-            )
+            # replaceで再構築し、resource/location/focus等の他フィールドを保持する
+            result.append(replace(entry, speech=speech))
         return tuple(result)
