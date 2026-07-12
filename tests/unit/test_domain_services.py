@@ -86,6 +86,59 @@ class TestTimelineMerger:
         )
         assert [e.timestamp.seconds for e in worklog.entries] == [10.0, 30.0]
 
+    def test_end_timestamp_is_next_entry_start(self) -> None:
+        """T2（Issue #18）: 窓解釈——エントリの終端は次エントリの開始時刻。"""
+        merger = TimelineMerger(ocr_match_tolerance_seconds=1.0)
+        worklog = merger.merge(
+            descriptions=[
+                _desc(300.0, "資料を読んでいる"),
+                _desc(450.0, "資料を読んでいる"),  # collapse対象
+                _desc(750.0, "メールを書いている"),
+            ],
+            ocr_texts=[_ocr(800.0, "最後の観測")],
+        )
+        first, second = worklog.entries
+        assert first.end_timestamp is not None
+        assert first.end_timestamp.seconds == 750.0  # 次エントリの開始
+        assert first.duration_seconds == 450.0
+        assert second.end_timestamp is not None
+        assert second.end_timestamp.seconds == 800.0  # 最終＝OCR最大時刻
+
+    def test_last_entry_end_falls_back_to_own_timestamp(self) -> None:
+        """OCR最大時刻がエントリより過去でも end < start にはしない。"""
+        merger = TimelineMerger(ocr_match_tolerance_seconds=1.0)
+        worklog = merger.merge(
+            descriptions=[_desc(100.0, "作業")],
+            ocr_texts=[_ocr(50.0, "古い観測")],
+        )
+        entry = worklog.entries[0]
+        assert entry.end_timestamp is not None
+        assert entry.end_timestamp.seconds == 100.0
+        assert entry.duration_seconds == 0.0
+
+    def test_no_ocr_leaves_last_end_none(self) -> None:
+        merger = TimelineMerger(ocr_match_tolerance_seconds=1.0)
+        worklog = merger.merge(descriptions=[_desc(10.0, "作業")], ocr_texts=[])
+        assert worklog.entries[0].end_timestamp is None
+
+    def test_attach_speech_preserves_end_timestamp(self) -> None:
+        """#14 F0系の回帰: 発話紐付けの再構築でendが消えない。"""
+        merger = TimelineMerger(ocr_match_tolerance_seconds=1.0)
+        segment = TranscriptSegment(
+            start=VideoTimestamp(seconds=11.0),
+            end=VideoTimestamp(seconds=12.0),
+            text="発話",
+        )
+        worklog = merger.merge(
+            descriptions=[_desc(10.0, "作業A"), _desc(20.0, "作業B")],
+            ocr_texts=[],
+            transcript_segments=[segment],
+        )
+        first = worklog.entries[0]
+        assert first.speech == ("発話",)
+        assert first.end_timestamp is not None
+        assert first.end_timestamp.seconds == 20.0
+
     def test_attach_speech_preserves_context_fields(self) -> None:
         """発話紐付けで resource/location/focus が消えない（👁行消失バグの回帰）。"""
         merger = TimelineMerger(ocr_match_tolerance_seconds=1.0)

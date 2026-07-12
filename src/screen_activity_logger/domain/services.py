@@ -49,8 +49,36 @@ class TimelineMerger:
             for desc in ordered
         ]
         collapsed = self._collapse_consecutive(entries)
-        with_speech = self._attach_speech(collapsed, list(transcript_segments))
+        with_ends = self._attach_end_timestamps(collapsed, ocr_list)
+        with_speech = self._attach_speech(with_ends, list(transcript_segments))
         return Worklog.from_entries(with_speech)
+
+    @staticmethod
+    def _attach_end_timestamps(
+        entries: Sequence[WorklogEntry],
+        ocr_texts: Sequence[OcrText],
+    ) -> tuple[WorklogEntry, ...]:
+        """窓解釈でエントリの終端を付与する（Issue #18）。
+
+        終端＝次エントリの開始時刻（_attach_speechの窓 [t_i, t_{i+1}) と同一の
+        意味論）。最終エントリは観測済みフレームの最大時刻（ocr_textsの最大）で、
+        観測が無い・過去のみの場合は自身の開始時刻（duration 0）に丸める。
+        """
+        if not entries:
+            return tuple(entries)
+        timeline_end = max(
+            (ocr.timestamp for ocr in ocr_texts), default=None
+        )
+        result: list[WorklogEntry] = []
+        for index, entry in enumerate(entries):
+            if index + 1 < len(entries):
+                end = entries[index + 1].timestamp
+            elif timeline_end is None:
+                end = None
+            else:
+                end = max(entry.timestamp, timeline_end)
+            result.append(replace(entry, end_timestamp=end))
+        return tuple(result)
 
     def _nearest_ocr_lines(
         self, timestamp: VideoTimestamp, ocr_texts: Sequence[OcrText]
