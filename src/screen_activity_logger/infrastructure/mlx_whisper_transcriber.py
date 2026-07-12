@@ -10,7 +10,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from screen_activity_logger.domain.models import TranscriptSegment, VideoTimestamp
+from screen_activity_logger.domain.models import TranscriptSegment
+from screen_activity_logger.infrastructure.asr_segments import build_segment
 from screen_activity_logger.infrastructure.audio_extraction import extract_audio_wav
 
 DEFAULT_ASR_MODEL = "kaiinui/kotoba-whisper-v2.0-mlx"
@@ -19,25 +20,19 @@ DEFAULT_ASR_MODEL = "kaiinui/kotoba-whisper-v2.0-mlx"
 def segments_from_result(result: Any) -> tuple[TranscriptSegment, ...]:
     """mlx_whisper.transcribe の結果dictをTranscriptSegment列に変換する。
 
-    実会議音声ではWhisperが end < start や負のstartを返すことがあるため、
-    ドメインの不変条件を満たすようクランプする（発話テキストは保持）。
+    正規化（クランプ・空スキップ）はバックエンド共通のbuild_segmentに委譲。
     """
     segments = []
     for raw in result.get("segments", ()):
-        text = str(raw.get("text", "")).strip()
-        if not text:
-            continue
-        start = max(0.0, float(raw["start"]))
-        end = max(start, float(raw["end"]))
-        segments.append(
-            TranscriptSegment(
-                start=VideoTimestamp(seconds=start),
-                end=VideoTimestamp(seconds=end),
-                text=text,
-                no_speech_prob=_optional_float(raw.get("no_speech_prob")),
-                avg_logprob=_optional_float(raw.get("avg_logprob")),
-            )
+        segment = build_segment(
+            start=float(raw["start"]),
+            end=float(raw["end"]),
+            text=str(raw.get("text", "")),
+            no_speech_prob=_optional_float(raw.get("no_speech_prob")),
+            avg_logprob=_optional_float(raw.get("avg_logprob")),
         )
+        if segment is not None:
+            segments.append(segment)
     return tuple(segments)
 
 
