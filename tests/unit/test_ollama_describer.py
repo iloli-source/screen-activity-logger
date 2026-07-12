@@ -143,6 +143,18 @@ class TestOllamaSceneDescriber:
         assert "location" in prompt
         assert "focus" in prompt
 
+    def test_prompt_requires_readable_resource_or_null(self) -> None:
+        """R8（Issue #17 S3-c）: 読み取れないresourceはnullと明示指示する。"""
+        client = FakeOllamaClient('{"app_guess": null, "action": "a"}')
+        describer = OllamaSceneDescriber(model="qwen3-vl:8b", client=client)
+
+        describer.describe(_frame(), _ocr())
+
+        prompt = client.calls[-1]["messages"][0]["content"]
+        assert "明確に読み取れる場合のみ" in prompt
+        assert "null" in prompt
+        assert "説明文" in prompt  # 「画面の説明文を書かない」の指示
+
     def test_chat_failure_returns_fallback_instead_of_hanging_batch(self) -> None:
         """実バッチで発覚: 応答が来ないと無限待ち→バッチ全体が停止する。
 

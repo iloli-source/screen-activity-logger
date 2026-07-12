@@ -14,7 +14,7 @@ from screen_activity_logger.domain.models import (
 
 _PROMPT_TEMPLATE = """あなたはPC作業の記録係です。このスクリーンショットについて日本語で記録します:
 1) app_guess: 使用中のアプリ（Excel/PowerPoint/Chrome/VS Code等）
-2) resource: 開いているファイル名・Webページ（タイトルやURL）・文書名。タイトルバーやタブから読み取る
+2) resource: 開いているファイル名・ページタイトル・文書名。タイトルバーやタブに明確に読み取れる場合のみ。読み取れない・確信がない場合はnull。画面の説明文（"Web page titled..."等）や意味不明な文字断片は書かない
 3) location: リソース内の位置（シート名・スライド番号・ページ番号・見出し・URLパス等）
 4) focus: ユーザーが画面のどこを見て何を判断していそうか（カーソル位置・選択状態・強調から推測）
 5) action: 今している操作の説明（1〜2文）
