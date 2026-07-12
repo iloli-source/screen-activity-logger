@@ -296,6 +296,87 @@ class TestDescribeRetry:
         assert "失敗" in desc.action
         assert len(client.calls) == 2  # warmup + 1試行のみ
 
+    def test_owned_client_is_recreated_on_retry(self, monkeypatch) -> None:
+        """H5: リトライ時、自己所有クライアントはclose→再生成される。"""
+        import ollama as ollama_module
+
+        instances: list = []
+
+        class ScriptedClient:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+                self.closed = False
+                self.calls = 0
+                instances.append(self)
+
+            def chat(self, **kwargs):
+                self.calls += 1
+                if len(instances) == 1 and self.calls == 2:
+                    raise TimeoutError("hang")  # 1台目の実describeでハング
+                return {"message": {"content": '{"app_guess": null, "action": "a"}'}}
+
+            def close(self):
+                self.closed = True
+
+        monkeypatch.setattr(ollama_module, "Client", ScriptedClient)
+        describer = OllamaSceneDescriber(model="qwen3-vl:8b", timeout_seconds=123.0)
+
+        desc = describer.describe(_frame(), _ocr())
+
+        assert desc.action == "a"  # リトライで救済
+        assert len(instances) == 2  # 再作成された
+        assert instances[0].closed is True  # ハング疑いはclose
+        assert instances[1].kwargs.get("timeout") == 123.0  # 設定引き継ぎ
+
+    def test_injected_client_is_not_recreated(self) -> None:
+        client = SequenceClient(["ok", TimeoutError("t"), self._OK])
+        describer = OllamaSceneDescriber(model="qwen3-vl:8b", client=client)
+
+        describer.describe(_frame(), _ocr())
+
+        # 同一オブジェクトのまま再試行されている（calls=3が同じclientに積まれる）
+        assert len(client.calls) == 3
+
+
+class TestInferenceTelemetry:
+    """H6（Issue #15）: 推論時間テレメトリ（熱制限 vs 純粋ハングの切り分け用）。"""
+
+    _OK = '{"app_guess": null, "action": "a"}'
+
+    def test_success_emits_duration_line(self, capsys) -> None:
+        client = FakeOllamaClient(self._OK)
+        describer = OllamaSceneDescriber(model="qwen3-vl:8b", client=client)
+
+        describer.describe(_frame(), _ocr())
+
+        out = capsys.readouterr().out
+        assert "VLM推論 t=00:00:12 attempt=1" in out
+        assert "SLOW" not in out  # フェイクは即応答
+
+    def test_slow_call_is_flagged(self, capsys, monkeypatch) -> None:
+        ticks = iter([0.0, 61.0, 100.0, 161.0])  # warmup用+describe用の対
+        monkeypatch.setattr(
+            "screen_activity_logger.infrastructure.ollama_describer"
+            ".time.monotonic",
+            lambda: next(ticks),
+        )
+        client = FakeOllamaClient(self._OK)
+        describer = OllamaSceneDescriber(model="qwen3-vl:8b", client=client)
+
+        describer.describe(_frame(), _ocr())
+
+        assert "SLOW" in capsys.readouterr().out
+
+    def test_failure_line_includes_attempt_and_elapsed(self, capsys) -> None:
+        client = SequenceClient(["ok", ValueError("bad")])
+        describer = OllamaSceneDescriber(model="qwen3-vl:8b", client=client)
+
+        describer.describe(_frame(), _ocr())
+
+        out = capsys.readouterr().out
+        assert "attempt=1/2" in out
+        assert "s: ValueError" in out
+
 
 class TestOllamaWarmUp:
     """G1: 初回describe直前の遅延ウォームアップ（Issue #14）。
