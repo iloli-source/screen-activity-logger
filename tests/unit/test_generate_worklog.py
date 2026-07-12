@@ -221,3 +221,35 @@ class TestOcrSkipWithComparator:
         use_case.execute(Path("/tmp/video.mp4"))
 
         assert len(recognizer.recognized_frames) == 2
+
+
+class TestDwellTimeWiring:
+    """T5（Issue #18）: パイプライン経由で滞留時間が結線される回帰。"""
+
+    def test_collapsed_entries_get_end_timestamps(self) -> None:
+        class SameActionDescriber:
+            def describe(self, frame, ocr, speech=()):
+                return ActivityDescription(
+                    timestamp=frame.timestamp,
+                    action="資料を読んでいる",
+                    app_guess="Preview",
+                )
+
+        frames = [
+            _frame(10.0, is_keyframe=True),
+            _frame(20.0, is_keyframe=True),   # collapse対象（同一アクション）
+            _frame(30.0, is_keyframe=False),  # OCR観測のみ（timeline_end）
+        ]
+        use_case = GenerateWorklog(
+            frame_extractor=FakeFrameExtractor(frames),
+            text_recognizer=FakeTextRecognizer(),
+            scene_describer=SameActionDescriber(),
+            merger=TimelineMerger(ocr_match_tolerance_seconds=1.0),
+        )
+        worklog = use_case.execute(Path("/tmp/v.mp4"))
+
+        assert len(worklog.entries) == 1  # collapseされている
+        entry = worklog.entries[0]
+        assert entry.end_timestamp is not None
+        assert entry.end_timestamp.seconds == 30.0  # 最終観測まで
+        assert entry.duration_seconds == 20.0
