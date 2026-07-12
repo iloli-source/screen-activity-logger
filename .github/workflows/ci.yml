@@ -22,12 +22,14 @@ jobs:
           cache-dependency-glob: "**/pyproject.toml"
 
       - name: Install dependencies
-        # PaddleOCR/Ollamaは遅延import設計のため、高速テストには重い実体が不要。
+        # PaddleOCRは遅延import設計のため、高速テストには重い実体が不要。
         # --no-deps でパッケージ本体のみ入れ、テスト用依存を個別に追加する。
+        # ollamaクライアントは軽量（HTTPクライアントのみ）かつ
+        # test_lazy_client_is_created_with_timeout がimportするため入れる。
         # venvはsetup-uvが作成済みのためuv venvは実行しない。
         run: |
           uv pip install -e . --no-deps
-          uv pip install pytest pytest-cov pillow
+          uv pip install pytest pytest-cov pillow ollama
 
       - name: "Run tests (fast: unit + ffmpeg integration)"
         # slowマーカー（PaddleOCRモデルDL・実VLM・e2e）はローカル/実機で実行する
