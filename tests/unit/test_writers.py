@@ -84,3 +84,48 @@ class TestMarkdownWorklogWriter:
         assert "## 00:13:20" in text
         # app_guess が無い場合は「 — None」を出さない
         assert "None" not in text
+
+    def _entry_with(self, resource: str, location: str) -> Worklog:
+        return Worklog.from_entries(
+            [
+                WorklogEntry(
+                    timestamp=VideoTimestamp(seconds=10.0),
+                    action="作業中",
+                    app_guess="Excel",
+                    ocr_lines=(),
+                    resource=resource,
+                    location=location,
+                )
+            ]
+        )
+
+    def test_location_contained_in_resource_is_not_appended(
+        self, tmp_path: Path
+    ) -> None:
+        """R7（Issue #17 S4）: 重複するlocationを見出しに付けない。"""
+        out = tmp_path / "worklog.md"
+        MarkdownWorklogWriter().write(
+            self._entry_with("店舗別売上実績 (Sheet2)", "Sheet2"), out
+        )
+        text = out.read_text(encoding="utf-8")
+        assert "店舗別売上実績 (Sheet2)" in text
+        assert "（Sheet2）" not in text
+
+    def test_resource_contained_in_location_is_not_appended(
+        self, tmp_path: Path
+    ) -> None:
+        """逆包含（実録画: 店舗売上実績（シート名: 店舗売上実績））もスキップ。"""
+        out = tmp_path / "worklog.md"
+        MarkdownWorklogWriter().write(
+            self._entry_with("店舗売上実績", "シート名: 店舗売上実績"), out
+        )
+        text = out.read_text(encoding="utf-8")
+        assert "— 店舗売上実績" in text
+        assert "（シート名: 店舗売上実績）" not in text
+
+    def test_distinct_location_is_appended(self, tmp_path: Path) -> None:
+        out = tmp_path / "worklog.md"
+        MarkdownWorklogWriter().write(
+            self._entry_with("見積書.xlsx", "Sheet1"), out
+        )
+        assert "見積書.xlsx（Sheet1）" in out.read_text(encoding="utf-8")
