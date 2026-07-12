@@ -201,6 +201,49 @@ class TestOllamaSceneDescriber:
         assert client.calls[-1]["options"]["num_ctx"] >= 8192
 
 
+class TestIsRetryable:
+    """H1（Issue #15）: タイムアウト系例外のみリトライ対象。"""
+
+    def test_builtin_timeout_error_is_retryable(self) -> None:
+        from screen_activity_logger.infrastructure.ollama_describer import (
+            _is_retryable,
+        )
+
+        assert _is_retryable(TimeoutError("read timeout")) is True
+
+    def test_httpx_style_hierarchy_is_retryable(self) -> None:
+        """httpxの例外MRO（ReadTimeout→TimeoutException→…）を模倣して検証。"""
+        from screen_activity_logger.infrastructure.ollama_describer import (
+            _is_retryable,
+        )
+
+        class TimeoutException(Exception): ...
+
+        class ReadTimeout(TimeoutException): ...
+
+        assert _is_retryable(ReadTimeout("timed out")) is True
+
+    def test_real_httpx_read_timeout_is_retryable(self) -> None:
+        import httpx
+
+        from screen_activity_logger.infrastructure.ollama_describer import (
+            _is_retryable,
+        )
+
+        assert _is_retryable(httpx.ReadTimeout("timed out")) is True
+
+    def test_non_timeout_errors_are_not_retryable(self) -> None:
+        from screen_activity_logger.infrastructure.ollama_describer import (
+            _is_retryable,
+        )
+
+        class ResponseError(Exception): ...  # ollama.ResponseError風
+
+        assert _is_retryable(ValueError("bad json")) is False
+        assert _is_retryable(ResponseError("model error")) is False
+        assert _is_retryable(ConnectionError("server down")) is False
+
+
 class TestOllamaWarmUp:
     """G1: 初回describe直前の遅延ウォームアップ（Issue #14）。
 

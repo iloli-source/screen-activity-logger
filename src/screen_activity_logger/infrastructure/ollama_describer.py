@@ -43,6 +43,26 @@ DEFAULT_TIMEOUT_SECONDS = 300.0
 # 再ロードのコールドスタートが繰り返されるのを防ぐ
 _KEEP_ALIVE = "30m"
 
+# タイムアウト時のリトライ上限（Issue #15。ハング・一時的熱制限の救済）
+_MAX_ATTEMPTS = 2
+
+# 推論時間テレメトリのSLOW警告閾値（通常数秒〜十数秒、熱制限下130秒実測の中間）
+_SLOW_CALL_THRESHOLD_SECONDS = 60.0
+
+
+def _is_retryable(error: BaseException) -> bool:
+    """タイムアウト系例外か（Issue #15のリトライ対象判定）。
+
+    httpxを直接importせず例外MROのクラス名で判定する:
+    TimeoutException=httpxの全タイムアウト、TimeoutError=組み込み系。
+    ollama.ResponseError（モデルエラー）やConnectionError（サーバ停止）は
+    再試行しても無意味なので対象外＝即フォールバック。
+    """
+    return any(
+        cls.__name__ in ("TimeoutException", "TimeoutError")
+        for cls in type(error).__mro__
+    )
+
 
 class ChatClient(Protocol):
     """ollama.Client互換の最小インターフェース。"""
