@@ -22,6 +22,10 @@ from screen_activity_logger.domain.models import (
 )
 from screen_activity_logger.domain.screen_context import enrich_description
 from screen_activity_logger.domain.services import TimelineMerger
+from screen_activity_logger.domain.speech_filter import (
+    SpeechFilterConfig,
+    filter_segments,
+)
 from screen_activity_logger.domain.vlm_gate import (
     VlmGateConfig,
     normalize_ocr_tokens,
@@ -54,6 +58,7 @@ class GenerateWorklog:
     speech_transcriber: SpeechTranscriber | None = None
     ocr_keyframes_only: bool = False
     vlm_gate: VlmGateConfig | None = None
+    speech_filter: SpeechFilterConfig | None = None
 
     def execute(
         self,
@@ -67,6 +72,9 @@ class GenerateWorklog:
             if precomputed_segments is not None
             else self._transcribe(video_path)
         )
+        # 単発・バッチ両経路のチョークポイントで幻覚フィルタを適用（Issue #14）
+        if self.speech_filter is not None:
+            segments = filter_segments(segments, self.speech_filter)
         ocr_by_frame = self._recognize_frames(frames)
         descriptions = [
             enrich_description(

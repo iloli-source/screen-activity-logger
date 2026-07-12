@@ -14,6 +14,7 @@ from screen_activity_logger.domain.models import (
     WorklogEntry,
 )
 from screen_activity_logger.domain.services import TimelineMerger
+from screen_activity_logger.domain.speech_filter import SpeechFilterConfig
 from screen_activity_logger.infrastructure.writers import (
     JsonlWorklogWriter,
     MarkdownWorklogWriter,
@@ -28,11 +29,19 @@ def _frame(seconds: float, is_keyframe: bool = True) -> Frame:
     )
 
 
-def _segment(start: float, end: float, text: str) -> TranscriptSegment:
+def _segment(
+    start: float,
+    end: float,
+    text: str,
+    no_speech_prob: float | None = None,
+    avg_logprob: float | None = None,
+) -> TranscriptSegment:
     return TranscriptSegment(
         start=VideoTimestamp(seconds=start),
         end=VideoTimestamp(seconds=end),
         text=text,
+        no_speech_prob=no_speech_prob,
+        avg_logprob=avg_logprob,
     )
 
 
@@ -116,6 +125,62 @@ class TestGenerateWorklogWithSpeech:
         worklog = use_case.execute(Path("/tmp/v.mp4"))
         assert worklog.entries[0].speech == ()
         assert describer.received_speech[0] == ()
+
+
+class TestGenerateWorklogWithSpeechFilter:
+    """ASR幻覚フィルタのユースケース統合（Issue #14 F3）。"""
+
+    def _build(
+        self,
+        segments: list[TranscriptSegment],
+        speech_filter: SpeechFilterConfig | None,
+    ) -> tuple[GenerateWorklog, SpeechCapturingDescriber]:
+        describer = SpeechCapturingDescriber()
+        use_case = GenerateWorklog(
+            frame_extractor=FakeExtractor([_frame(10.0)]),
+            text_recognizer=FakeRecognizer(),
+            scene_describer=describer,
+            merger=TimelineMerger(ocr_match_tolerance_seconds=1.0),
+            speech_transcriber=FakeTranscriber(segments),
+            speech_filter=speech_filter,
+        )
+        return use_case, describer
+
+    _HALLUCINATION = ("!", 0.98, -1.4)
+    _NORMAL = ("正常な発話です", 0.1, -0.2)
+
+    def test_filter_removes_hallucination_from_entries_and_prompt(self) -> None:
+        use_case, describer = self._build(
+            segments=[
+                _segment(11.0, 12.0, *self._HALLUCINATION),
+                _segment(13.0, 14.0, *self._NORMAL),
+            ],
+            speech_filter=SpeechFilterConfig(),
+        )
+        worklog = use_case.execute(Path("/tmp/v.mp4"))
+        assert worklog.entries[0].speech == ("正常な発話です",)
+        assert describer.received_speech[0] == ("正常な発話です",)
+
+    def test_filter_applies_to_precomputed_segments(self) -> None:
+        """バッチ経路（2フェーズ）でもフィルタが効くこと。"""
+        use_case, _ = self._build(segments=[], speech_filter=SpeechFilterConfig())
+        worklog = use_case.execute(
+            Path("/tmp/v.mp4"),
+            precomputed_segments=[
+                _segment(11.0, 12.0, *self._HALLUCINATION),
+                _segment(13.0, 14.0, *self._NORMAL),
+            ],
+        )
+        assert worklog.entries[0].speech == ("正常な発話です",)
+
+    def test_no_filter_keeps_hallucination(self) -> None:
+        """speech_filter=None は現行動作（後方互換）。"""
+        use_case, _ = self._build(
+            segments=[_segment(11.0, 12.0, *self._HALLUCINATION)],
+            speech_filter=None,
+        )
+        worklog = use_case.execute(Path("/tmp/v.mp4"))
+        assert worklog.entries[0].speech == ("!",)
 
 
 class TestSpeechInWriters:
