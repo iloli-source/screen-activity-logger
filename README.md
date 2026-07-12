@@ -166,4 +166,4 @@ uv run python -m screen_activity_logger.cli 録画.mp4 -o out/
 
 ## ライセンス
 
-未定（実装フェーズで決定）。利用する各モデルのライセンスは個別に確認すること（Qwen系 Apache-2.0、Sarashina Vision MIT、Ruri v3 Apache-2.0）。
+[Apache-2.0](./LICENSE)（Issue #9で決定）。利用する各モデルのライセンスは個別に確認すること（Qwen系 Apache-2.0、Sarashina Vision MIT、Ruri v3 Apache-2.0）。
