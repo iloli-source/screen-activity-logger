@@ -140,6 +140,28 @@ class TestBuildUseCase:
         )
         assert isinstance(use_case.speech_transcriber, MlxWhisperTranscriber)
 
+    def test_wires_vlm_timeout(self, tmp_path: Path) -> None:
+        """H7（Issue #15）: --vlm-timeoutがdescriberに配線される。"""
+        use_case = build_use_case(
+            fps=0.5,
+            scene_threshold=0.08,
+            model="qwen3-vl:8b",
+            ocr_tolerance_seconds=2.0,
+            workdir=tmp_path,
+            vlm_timeout_seconds=450.0,
+        )
+        assert use_case.scene_describer._timeout_seconds == 450.0
+
+    def test_default_vlm_timeout_is_300(self, tmp_path: Path) -> None:
+        use_case = build_use_case(
+            fps=0.5,
+            scene_threshold=0.08,
+            model="qwen3-vl:8b",
+            ocr_tolerance_seconds=2.0,
+            workdir=tmp_path,
+        )
+        assert use_case.scene_describer._timeout_seconds == 300.0
+
     def test_wires_speech_filter(self, tmp_path: Path) -> None:
         """F4: ASR幻覚フィルタが配線される（Issue #14）。"""
         from screen_activity_logger.domain.speech_filter import SpeechFilterConfig

@@ -33,6 +33,7 @@ from screen_activity_logger.infrastructure.mlx_whisper_transcriber import (
     DEFAULT_ASR_MODEL,
 )
 from screen_activity_logger.infrastructure.ollama_describer import (
+    DEFAULT_TIMEOUT_SECONDS,
     OllamaSceneDescriber,
 )
 from screen_activity_logger.infrastructure.paddle_ocr import PaddleOcrRecognizer
@@ -62,6 +63,7 @@ def build_use_case(
     vlm_gate: VlmGateConfig | None = None,
     speech_filter: SpeechFilterConfig | None = None,
     asr_backend: str = "mlx",
+    vlm_timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> GenerateWorklog:
     """設定値から全アダプタを組み立てたユースケースを返す。
 
@@ -76,7 +78,9 @@ def build_use_case(
             fps=fps, scene_threshold=scene_threshold, workdir=workdir
         ),
         text_recognizer=PaddleOcrRecognizer(tier=ocr_tier),
-        scene_describer=OllamaSceneDescriber(model=model),
+        scene_describer=OllamaSceneDescriber(
+            model=model, timeout_seconds=vlm_timeout_seconds
+        ),
         merger=TimelineMerger(ocr_match_tolerance_seconds=ocr_tolerance_seconds),
         frame_comparator=PilFrameComparator(threshold=diff_threshold),
         speech_transcriber=(
@@ -146,6 +150,10 @@ def main(argv: list[str] | None = None) -> int:
         help="VLM強制実行の最大間隔秒（安全弁、既定: 120）",
     )
     parser.add_argument(
+        "--vlm-timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS,
+        help="VLM呼び出しの試行毎タイムアウト秒（タイムアウト時は1回リトライ、既定: 300）",
+    )
+    parser.add_argument(
         "--asr-no-speech-prob", type=float, default=0.6,
         help="幻覚フィルタ: no_speech_probがこれを超えると除去候補（既定: 0.6）",
     )
@@ -188,6 +196,7 @@ def main(argv: list[str] | None = None) -> int:
             diff_threshold=args.diff_threshold,
             asr_model=asr_model,
             asr_backend=asr_backend,
+            vlm_timeout_seconds=args.vlm_timeout,
             ocr_keyframes_only=(args.mode == "meeting"),
             vlm_gate=(
                 VlmGateConfig(
