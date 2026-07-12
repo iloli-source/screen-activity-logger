@@ -101,3 +101,37 @@ class TestWorklog:
         log = Worklog.from_entries([self._entry(1.0)])
         with pytest.raises(dataclasses.FrozenInstanceError):
             log.entries = ()  # type: ignore[misc]
+
+
+class TestWorklogEntryDuration:
+    """T1（Issue #18）: 終了時刻と継続時間。"""
+
+    def test_end_timestamp_defaults_to_none(self) -> None:
+        from screen_activity_logger.domain.models import (
+            VideoTimestamp,
+            WorklogEntry,
+        )
+
+        entry = WorklogEntry(
+            timestamp=VideoTimestamp(seconds=10.0),
+            action="作業",
+            app_guess=None,
+            ocr_lines=(),
+        )
+        assert entry.end_timestamp is None
+        assert entry.duration_seconds is None
+
+    def test_duration_is_derived_from_end(self) -> None:
+        from screen_activity_logger.domain.models import (
+            VideoTimestamp,
+            WorklogEntry,
+        )
+
+        entry = WorklogEntry(
+            timestamp=VideoTimestamp(seconds=300.0),
+            action="資料を読んでいる",
+            app_guess=None,
+            ocr_lines=(),
+            end_timestamp=VideoTimestamp(seconds=750.0),
+        )
+        assert entry.duration_seconds == 450.0

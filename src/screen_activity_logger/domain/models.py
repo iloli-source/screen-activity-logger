@@ -94,7 +94,10 @@ class TranscriptSegment:
 
 @dataclass(frozen=True)
 class WorklogEntry:
-    """作業ログの1エントリ（OCR・VLM説明・発話の統合結果）。"""
+    """作業ログの1エントリ（OCR・VLM説明・発話の統合結果）。
+
+    end_timestamp: このエントリの終端（次エントリの開始時刻＝窓解釈、Issue #18）。
+    """
 
     timestamp: VideoTimestamp
     action: str
@@ -104,6 +107,14 @@ class WorklogEntry:
     resource: str | None = None
     location: str | None = None
     focus: str | None = None
+    end_timestamp: VideoTimestamp | None = None
+
+    @property
+    def duration_seconds(self) -> float | None:
+        """滞留時間（秒）。end_timestampが無ければNone。"""
+        if self.end_timestamp is None:
+            return None
+        return self.end_timestamp.seconds - self.timestamp.seconds
 
 
 @dataclass(frozen=True)
