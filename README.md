@@ -119,6 +119,15 @@ export OLLAMA_KV_CACHE_TYPE=q8_0  # KVメモリ約半減（品質はq8が無難�
 .venv/bin/pytest --cov           # 全テスト＋カバレッジ（OCR/ASR/e2e含む）
 ```
 
+
+### Claude Code から使う（skill）
+
+```bash
+ln -s "$(pwd)/skills/screen-activity-logger" ~/.claude/skills/screen-activity-logger
+```
+
+以降、Claude Code で「この録画を作業ログにして」と頼むと前提チェック〜実行〜結果要約まで行う。
+
 ### Windowsでのセットアップ
 
 ```powershell
@@ -144,7 +153,7 @@ uv run python -m screen_activity_logger.cli 録画.mp4 -o out/
 
 ## 開発状況（Issue駆動）
 
-進行状況は [GitHub Issues](https://github.com/sivachi/screen-activity-logger/issues) が正。
+進行状況は [GitHub Issues](https://github.com/iloli-source/screen-activity-logger/issues) が正。
 - ✅ 完了: 最小パイプライン(#1)、ASR層(#6)、バッチ2フェーズ＋会議モード(#7)、構造化コンテキスト抽出(#12)
 - 🔄 進行中: VLMゲート実測検証(#13)
 - 📥 キュー: スクショ付き手順書・滞留時間・実時刻復元(#11)、映像ベース話者特定(#10)
