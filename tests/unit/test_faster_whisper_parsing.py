@@ -70,3 +70,75 @@ class TestSegmentsFromFasterSegments:
         generator = (_raw(float(i), float(i) + 1.0, f"発話{i}") for i in range(3))
         segments = segments_from_faster_segments(generator)
         assert [s.text for s in segments] == ["発話0", "発話1", "発話2"]
+
+
+class FakeWhisperModel:
+    """faster_whisper.WhisperModel の記録用フェイク。"""
+
+    constructed: list[dict] = []
+    transcribe_calls: list[dict] = []
+
+    def __init__(self, model: str, **kwargs) -> None:
+        FakeWhisperModel.constructed.append({"model": model, **kwargs})
+
+    def transcribe(self, audio: str, **kwargs):
+        FakeWhisperModel.transcribe_calls.append({"audio": audio, **kwargs})
+        info = SimpleNamespace(language="ja")
+        return iter([_raw(0.0, 1.0, "テスト発話")]), info
+
+
+class TestFasterWhisperTranscriberWiring:
+    """fakeモジュール注入によりfaster-whisper未導入環境でも配線を検証（W4）。"""
+
+    def _install_fake(self, monkeypatch) -> None:
+        import sys
+        import types
+
+        FakeWhisperModel.constructed = []
+        FakeWhisperModel.transcribe_calls = []
+        fake_module = types.ModuleType("faster_whisper")
+        fake_module.WhisperModel = FakeWhisperModel
+        monkeypatch.setitem(sys.modules, "faster_whisper", fake_module)
+
+    def _transcriber(self, monkeypatch, tmp_path):
+        from pathlib import Path
+
+        from screen_activity_logger.infrastructure.faster_whisper_transcriber import (
+            FasterWhisperTranscriber,
+        )
+
+        self._install_fake(monkeypatch)
+        transcriber = FasterWhisperTranscriber()
+        # ffmpeg実行を回避（wavファイルだけ用意する）
+        monkeypatch.setattr(
+            "screen_activity_logger.infrastructure.faster_whisper_transcriber"
+            ".extract_audio_wav",
+            lambda video, wav: Path(wav).write_bytes(b""),
+        )
+        return transcriber
+
+    def test_passes_kotoba_recommended_options(self, monkeypatch, tmp_path) -> None:
+        from pathlib import Path
+
+        transcriber = self._transcriber(monkeypatch, tmp_path)
+        segments = transcriber.transcribe(Path("/tmp/v.mp4"))
+
+        assert [s.text for s in segments] == ["テスト発話"]
+        call = FakeWhisperModel.transcribe_calls[0]
+        assert call["language"] == "ja"
+        assert call["chunk_length"] == 15
+        assert call["condition_on_previous_text"] is False
+        assert call["vad_filter"] is False
+
+    def test_model_is_loaded_once_across_transcribes(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        from pathlib import Path
+
+        transcriber = self._transcriber(monkeypatch, tmp_path)
+        transcriber.transcribe(Path("/tmp/a.mp4"))
+        transcriber.transcribe(Path("/tmp/b.mp4"))
+
+        assert len(FakeWhisperModel.constructed) == 1  # バッチでロード1回
+        assert FakeWhisperModel.constructed[0]["device"] == "auto"
+        assert FakeWhisperModel.constructed[0]["compute_type"] == "auto"
