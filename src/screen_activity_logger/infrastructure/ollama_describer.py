@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from typing import Any, Protocol
 
 from screen_activity_logger.domain.models import (
@@ -81,6 +82,7 @@ class OllamaSceneDescriber:
     ) -> None:
         self._model = model
         self._client = client
+        self._owns_client = client is None  # 注入クライアントは再作成しない
         self._timeout_seconds = timeout_seconds
         self._warmed = False
 
@@ -88,30 +90,48 @@ class OllamaSceneDescriber:
         self, frame: Frame, ocr: OcrText, speech: tuple[str, ...] = ()
     ) -> ActivityDescription:
         self._ensure_warm()
-        try:
-            response = self._get_client().chat(
-                model=self._model,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": self._build_prompt(ocr, speech),
-                        "images": [str(frame.path)],
-                    }
-                ],
-                think=False,
-                options={"num_ctx": _NUM_CTX},
-                keep_alive=_KEEP_ALIVE,
-            )
-        except Exception as error:  # noqa: BLE001 — バッチ継続を優先しログに残す
+        response = None
+        for attempt in range(1, _MAX_ATTEMPTS + 1):
+            started = time.monotonic()
+            try:
+                response = self._get_client().chat(
+                    model=self._model,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": self._build_prompt(ocr, speech),
+                            "images": [str(frame.path)],
+                        }
+                    ],
+                    think=False,
+                    options={"num_ctx": _NUM_CTX},
+                    keep_alive=_KEEP_ALIVE,
+                )
+            except Exception as error:  # noqa: BLE001 — バッチ継続を優先しログに残す
+                elapsed = time.monotonic() - started
+                print(
+                    f"VLM呼び出し失敗 t={frame.timestamp}"
+                    f" attempt={attempt}/{_MAX_ATTEMPTS} {elapsed:.1f}s:"
+                    f" {type(error).__name__}: {error}",
+                    flush=True,
+                )
+                if attempt < _MAX_ATTEMPTS and _is_retryable(error):
+                    # ハングしたコネクションの残骸を排除してから再試行
+                    self._reset_client()
+                    continue
+                return ActivityDescription(
+                    timestamp=frame.timestamp,
+                    action=f"（VLM呼び出し失敗: {type(error).__name__}）",
+                    app_guess=None,
+                )
+            elapsed = time.monotonic() - started
+            slow = " SLOW" if elapsed > _SLOW_CALL_THRESHOLD_SECONDS else ""
             print(
-                f"VLM呼び出し失敗 t={frame.timestamp}: {type(error).__name__}: {error}",
+                f"VLM推論 t={frame.timestamp} attempt={attempt}"
+                f" {elapsed:.1f}s{slow}",
                 flush=True,
             )
-            return ActivityDescription(
-                timestamp=frame.timestamp,
-                action=f"（VLM呼び出し失敗: {type(error).__name__}）",
-                app_guess=None,
-            )
+            break
         content = self._response_content(response)
         fields = self._parse(content)
         return ActivityDescription(
@@ -155,6 +175,22 @@ class OllamaSceneDescriber:
 
             self._client = ollama.Client(timeout=self._timeout_seconds)
         return self._client
+
+    def _reset_client(self) -> None:
+        """ハング疑いのクライアントを破棄し次回遅延再生成する（Issue #15）。
+
+        自己所有クライアントのみ対象（注入クライアントはテスト・DI用のため
+        同一オブジェクトを再利用）。close()はChatClient Protocolにないため防御的に呼ぶ。
+        """
+        if not self._owns_client or self._client is None:
+            return
+        close = getattr(self._client, "close", None)
+        if close is not None:
+            try:
+                close()
+            except Exception:  # noqa: BLE001 — 破棄目的なので失敗は無視
+                pass
+        self._client = None
 
     @staticmethod
     def _build_prompt(ocr: OcrText, speech: tuple[str, ...] = ()) -> str:

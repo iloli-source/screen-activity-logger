@@ -244,6 +244,59 @@ class TestIsRetryable:
         assert _is_retryable(ConnectionError("server down")) is False
 
 
+class SequenceClient:
+    """呼び出し順に応答/例外を返すフェイク（リトライ検証用）。"""
+
+    def __init__(self, script: list) -> None:
+        self._script = script
+        self.calls: list[dict[str, Any]] = []
+
+    def chat(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(kwargs)
+        step = self._script[min(len(self.calls) - 1, len(self._script) - 1)]
+        if isinstance(step, Exception):
+            raise step
+        return {"message": {"content": step}}
+
+
+class TestDescribeRetry:
+    """H2-H4（Issue #15）: タイムアウト時のリトライ救済・上限・絞り込み。"""
+
+    _OK = '{"app_guess": "Excel", "action": "編集中"}'
+
+    def test_timeout_then_success_is_rescued(self) -> None:
+        # warmup成功 → 1回目describe=timeout → リトライ成功
+        client = SequenceClient(["ok", TimeoutError("read timeout"), self._OK])
+        describer = OllamaSceneDescriber(model="qwen3-vl:8b", client=client)
+
+        desc = describer.describe(_frame(), _ocr())
+
+        assert desc.app_guess == "Excel"  # フォールバックでなくパース済み
+        assert desc.action == "編集中"
+        assert len(client.calls) == 3  # warmup + 2試行
+
+    def test_two_consecutive_timeouts_fall_back(self) -> None:
+        client = SequenceClient(
+            ["ok", TimeoutError("t1"), TimeoutError("t2"), self._OK]
+        )
+        describer = OllamaSceneDescriber(model="qwen3-vl:8b", client=client)
+
+        desc = describer.describe(_frame(), _ocr())
+
+        assert "失敗" in desc.action  # フォールバック
+        assert len(client.calls) == 3  # warmup + 2試行で打ち止め（3試行目なし）
+
+    def test_non_retryable_error_falls_back_immediately(self) -> None:
+        """Issue #7の全例外フォールバックは維持しつつ、無駄な再試行をしない。"""
+        client = SequenceClient(["ok", ValueError("bad"), self._OK])
+        describer = OllamaSceneDescriber(model="qwen3-vl:8b", client=client)
+
+        desc = describer.describe(_frame(), _ocr())
+
+        assert "失敗" in desc.action
+        assert len(client.calls) == 2  # warmup + 1試行のみ
+
+
 class TestOllamaWarmUp:
     """G1: 初回describe直前の遅延ウォームアップ（Issue #14）。
 
