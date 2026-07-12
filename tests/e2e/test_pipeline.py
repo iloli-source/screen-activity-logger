@@ -29,9 +29,15 @@ from screen_activity_logger.infrastructure.writers import (
     MarkdownWorklogWriter,
 )
 
-pytestmark = [pytest.mark.integration, pytest.mark.slow]
+from support.fonts import find_jp_font
 
-_JP_FONT = Path("/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc")
+_JP_FONT = find_jp_font()  # マルチプラットフォーム探索（Issue #16）
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.slow,
+    pytest.mark.skipif(_JP_FONT is None, reason="日本語フォントなし"),
+]
 
 
 class FakeDescriber:

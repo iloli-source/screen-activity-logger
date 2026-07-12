@@ -1,43 +1,35 @@
 """MlxWhisperTranscriber の統合テスト（Cycle R-2: RED）。
 
-macの`say`で合成した日本語音声入り動画を実際に文字起こしする。
+TTS合成した日本語音声入り動画を実際に文字起こしする。
 初回はkotoba-whisper-v2.0-mlxモデルのダウンロードが走るため slow。
+mlx-whisperはApple Silicon専用のためdarwin以外はskip（Issue #16）。
 """
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+from support.tts import synthesize_speech_video
 
 from screen_activity_logger.infrastructure.ffmpeg_extractor import has_audio_stream
 from screen_activity_logger.infrastructure.mlx_whisper_transcriber import (
     MlxWhisperTranscriber,
 )
 
-pytestmark = [pytest.mark.integration, pytest.mark.slow]
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.slow,
+    pytest.mark.skipif(sys.platform != "darwin", reason="mlx-whisperはmacOS専用"),
+]
 
 
 @pytest.fixture(scope="module")
 def speech_video(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """「作業ログのテストを実行しています」と喋る5秒動画。"""
-    base = tmp_path_factory.mktemp("asr")
-    aiff = base / "speech.aiff"
-    subprocess.run(
-        ["say", "-v", "Kyoko", "-o", str(aiff), "作業ログのテストを実行しています"],
-        check=True,
-        capture_output=True,
-    )
-    video = base / "speech.mp4"
-    subprocess.run(
-        [
-            "ffmpeg", "-y",
-            "-f", "lavfi", "-i", "color=c=gray:size=320x240:duration=5:rate=10",
-            "-i", str(aiff),
-            "-c:a", "aac", "-shortest", "-pix_fmt", "yuv420p", str(video),
-        ],
-        check=True,
-        capture_output=True,
-    )
+    video = synthesize_speech_video(tmp_path_factory.mktemp("asr"))
+    if video is None:
+        pytest.skip("TTSが使えない環境")
     return video
 
 

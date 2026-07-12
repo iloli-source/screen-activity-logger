@@ -41,6 +41,7 @@ packages = ["src/screen_activity_logger"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+pythonpath = ["tests"]  # tests/support/ の共有ヘルパー（fonts/tts）用
 markers = [
     "slow: モデルダウンロード等を伴う重いテスト（-m 'not slow' で除外可）",
     "integration: 外部プロセス（ffmpeg等）を使う統合テスト",

@@ -13,9 +13,15 @@ from screen_activity_logger.domain.models import Frame, VideoTimestamp
 from screen_activity_logger.domain.screen_context import parse_screen_context
 from screen_activity_logger.infrastructure.paddle_ocr import PaddleOcrRecognizer
 
-pytestmark = [pytest.mark.integration, pytest.mark.slow]
+from support.fonts import find_jp_font
 
-_JP_FONT = Path("/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc")
+_JP_FONT = find_jp_font()  # マルチプラットフォーム探索（Issue #16）
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.slow,
+    pytest.mark.skipif(_JP_FONT is None, reason="日本語フォントなし"),
+]
 
 
 @pytest.fixture(scope="module")

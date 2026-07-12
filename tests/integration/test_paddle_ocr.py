@@ -12,9 +12,16 @@ from PIL import Image, ImageDraw, ImageFont
 from screen_activity_logger.domain.models import Frame, VideoTimestamp
 from screen_activity_logger.infrastructure.paddle_ocr import PaddleOcrRecognizer
 
-pytestmark = [pytest.mark.integration, pytest.mark.slow]
+from support.fonts import find_jp_font
 
-_JP_FONT = Path("/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc")
+_JP_FONT = find_jp_font()  # マルチプラットフォーム探索（Issue #16）
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.slow,
+    # ASCIIテストもフォント描画を使うためモジュール全体でフォント必須
+    pytest.mark.skipif(_JP_FONT is None, reason="日本語フォントなし"),
+]
 
 
 def _make_text_image(path: Path, text: str, font: ImageFont.FreeTypeFont) -> None:
@@ -46,7 +53,7 @@ class TestPaddleOcrRecognizer:
         assert "Hello" in joined
         assert "12345" in joined
 
-    @pytest.mark.skipif(not _JP_FONT.exists(), reason="日本語フォントなし")
+    @pytest.mark.skipif(_JP_FONT is None, reason="日本語フォントなし")
     def test_recognizes_japanese_text(
         self, recognizer: PaddleOcrRecognizer, tmp_path: Path
     ) -> None:
@@ -73,7 +80,7 @@ class TestPaddleOcrRecognizer:
 class TestOcrTierIntegration:
     """small tier（CLI既定）が日本語を読めることのスモーク（Cycle M）。"""
 
-    @pytest.mark.skipif(not _JP_FONT.exists(), reason="日本語フォントなし")
+    @pytest.mark.skipif(_JP_FONT is None, reason="日本語フォントなし")
     def test_small_tier_reads_japanese(self, tmp_path: Path) -> None:
         image_path = tmp_path / "jp_small.png"
         font = ImageFont.truetype(str(_JP_FONT), size=56)
