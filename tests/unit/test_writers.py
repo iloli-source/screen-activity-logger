@@ -44,6 +44,8 @@ class TestJsonlWorklogWriter:
         first = json.loads(lines[0])
         assert first == {
             "t": "00:12:34",
+            "t_end": None,
+            "duration_seconds": None,
             "app_guess": "VS Code",
             "resource": None,
             "location": None,
@@ -129,3 +131,58 @@ class TestMarkdownWorklogWriter:
             self._entry_with("見積書.xlsx", "Sheet1"), out
         )
         assert "見積書.xlsx（Sheet1）" in out.read_text(encoding="utf-8")
+
+
+class TestDurationFormatting:
+    """T4（Issue #18）: 継続時間の日本語整形。"""
+
+    def test_formats(self) -> None:
+        from screen_activity_logger.infrastructure.writers import (
+            _format_duration_ja,
+        )
+
+        assert _format_duration_ja(45) == "45秒"
+        assert _format_duration_ja(450) == "7分30秒"
+        assert _format_duration_ja(3720) == "1時間2分"
+        assert _format_duration_ja(3600) == "1時間"
+        assert _format_duration_ja(0) == "0秒"
+
+
+class TestDwellTimeOutput:
+    """T3-T4（Issue #18）: 滞留時間のJSONL・Markdown出力。"""
+
+    def _entry(self) -> WorklogEntry:
+        return WorklogEntry(
+            timestamp=VideoTimestamp(seconds=300.0),
+            action="資料を読んでいる",
+            app_guess="Preview",
+            ocr_lines=(),
+            end_timestamp=VideoTimestamp(seconds=750.0),
+        )
+
+    def test_jsonl_includes_end_and_duration(self, tmp_path: Path) -> None:
+        out = tmp_path / "worklog.jsonl"
+        JsonlWorklogWriter().write(Worklog.from_entries([self._entry()]), out)
+        record = json.loads(out.read_text(encoding="utf-8").splitlines()[0])
+        assert record["t_end"] == "00:12:30"
+        assert record["duration_seconds"] == 450.0
+
+    def test_markdown_heading_shows_time_range(self, tmp_path: Path) -> None:
+        out = tmp_path / "worklog.md"
+        MarkdownWorklogWriter().write(Worklog.from_entries([self._entry()]), out)
+        text = out.read_text(encoding="utf-8")
+        assert "## 00:05:00〜00:12:30（7分30秒） — Preview" in text
+
+    def test_zero_duration_falls_back_to_plain_heading(
+        self, tmp_path: Path
+    ) -> None:
+        entry = WorklogEntry(
+            timestamp=VideoTimestamp(seconds=10.0),
+            action="作業",
+            app_guess=None,
+            ocr_lines=(),
+            end_timestamp=VideoTimestamp(seconds=10.0),
+        )
+        out = tmp_path / "worklog.md"
+        MarkdownWorklogWriter().write(Worklog.from_entries([entry]), out)
+        assert "## 00:00:10\n" in out.read_text(encoding="utf-8")

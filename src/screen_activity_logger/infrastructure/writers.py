@@ -11,6 +11,21 @@ from screen_activity_logger.domain.models import Worklog, WorklogEntry
 _NORMALIZE_TABLE = str.maketrans({"（": "(", "）": ")", "　": " "})
 
 
+def _format_duration_ja(seconds: float) -> str:
+    """継続時間の日本語整形（45秒/7分30秒/1時間2分。ゼロ単位は省略）。"""
+    total = int(seconds)
+    hours, rest = divmod(total, 3600)
+    minutes, secs = divmod(rest, 60)
+    parts: list[str] = []
+    if hours:
+        parts.append(f"{hours}時間")
+    if minutes:
+        parts.append(f"{minutes}分")
+    if secs or not parts:
+        parts.append(f"{secs}秒")
+    return "".join(parts)
+
+
 def _is_redundant_location(resource: str, location: str) -> bool:
     """locationがresourceと重複情報なら見出しへの付与をスキップする。
 
@@ -32,6 +47,12 @@ class JsonlWorklogWriter:
     def _to_json(entry: WorklogEntry) -> str:
         payload = {
             "t": str(entry.timestamp),
+            "t_end": (
+                str(entry.end_timestamp)
+                if entry.end_timestamp is not None
+                else None
+            ),
+            "duration_seconds": entry.duration_seconds,
             "app_guess": entry.app_guess,
             "resource": entry.resource,
             "location": entry.location,
@@ -53,7 +74,14 @@ class MarkdownWorklogWriter:
 
     @staticmethod
     def _to_section(entry: WorklogEntry) -> str:
-        heading = f"## {entry.timestamp}"
+        duration = entry.duration_seconds
+        if entry.end_timestamp is not None and duration:
+            heading = (
+                f"## {entry.timestamp}〜{entry.end_timestamp}"
+                f"（{_format_duration_ja(duration)}）"
+            )
+        else:
+            heading = f"## {entry.timestamp}"
         if entry.app_guess:
             heading += f" — {entry.app_guess}"
         if entry.resource:
