@@ -13,6 +13,7 @@ from typing import Iterable
 
 from screen_activity_logger.domain.models import ActivityDescription
 from screen_activity_logger.domain.resource_sanitizer import (
+    clean_vlm_resource,
     sanitize_url,
     url_domain,
 )
@@ -108,7 +109,9 @@ def _merge_resource(
 
     原則はOCR優先。ただしOCR値がURL形で、VLM値がそのドメインを含む場合は
     VLM値を採る（OCRの事実がVLMの「タイトル＋URL併記」を裏付けた＝豊かな方）。
+    VLM値は品質ゲート（幻覚断片・ボイラープレート棄却）を通す。
     """
+    vlm_resource = clean_vlm_resource(vlm_resource)
     if ocr_resource is None:
         return vlm_resource
     if vlm_resource and _URL_PATTERN.fullmatch(ocr_resource):

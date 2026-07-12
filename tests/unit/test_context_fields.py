@@ -73,6 +73,23 @@ class TestEnrichDescription:
         assert enriched.resource == "料金ページ"
         assert enriched.focus == "価格表"
 
+    def test_vlm_hallucination_fragment_is_rejected(self) -> None:
+        """R5（Issue #17 S3）: OCR沈黙時のVLM幻覚断片は昇格させない。"""
+        from screen_activity_logger.domain.screen_context import enrich_description
+
+        vlm_desc = _desc(1.0, "会議中", resource="IRW")
+        enriched = enrich_description(vlm_desc, ocr_lines=("IRW",))
+        assert enriched.resource is None
+
+    def test_vlm_boilerplate_is_rejected(self) -> None:
+        from screen_activity_logger.domain.screen_context import enrich_description
+
+        vlm_desc = _desc(
+            1.0, "閲覧中", resource='Web page titled "Ureya hasde"'
+        )
+        enriched = enrich_description(vlm_desc, ocr_lines=("Ureya", "hasde"))
+        assert enriched.resource is None
+
     def test_vlm_title_with_url_wins_when_ocr_url_confirms_domain(self) -> None:
         """R3（Issue #17）: OCRのURLがVLMのタイトル+URL併記を裏付ける場合はVLM値を優先。
 
