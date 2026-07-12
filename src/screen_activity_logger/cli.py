@@ -20,9 +20,17 @@ from screen_activity_logger.infrastructure.ffmpeg_extractor import (
 from screen_activity_logger.infrastructure.frame_comparator import (
     PilFrameComparator,
 )
+from screen_activity_logger.infrastructure.asr_factory import (
+    create_transcriber,
+    default_model_for,
+    ensure_backend_available,
+    resolve_backend,
+)
+from screen_activity_logger.infrastructure.faster_whisper_transcriber import (
+    DEFAULT_FASTER_ASR_MODEL,
+)
 from screen_activity_logger.infrastructure.mlx_whisper_transcriber import (
     DEFAULT_ASR_MODEL,
-    MlxWhisperTranscriber,
 )
 from screen_activity_logger.infrastructure.ollama_describer import (
     OllamaSceneDescriber,
@@ -53,6 +61,7 @@ def build_use_case(
     ocr_keyframes_only: bool = False,
     vlm_gate: VlmGateConfig | None = None,
     speech_filter: SpeechFilterConfig | None = None,
+    asr_backend: str = "mlx",
 ) -> GenerateWorklog:
     """設定値から全アダプタを組み立てたユースケースを返す。
 
@@ -60,6 +69,7 @@ def build_use_case(
     ocr_keyframes_only: 会議モード（OCRをキーフレームに限定）。
     vlm_gate: VLM間引きゲート（Noneで無効＝screencast既定）。
     speech_filter: ASR幻覚フィルタ（Noneで無効。CLI経由では既定ON）。
+    asr_backend: 解決済みバックエンド（mlx/faster。既定mlx＝後方互換）。
     """
     return GenerateWorklog(
         frame_extractor=FfmpegFrameExtractor(
@@ -70,7 +80,7 @@ def build_use_case(
         merger=TimelineMerger(ocr_match_tolerance_seconds=ocr_tolerance_seconds),
         frame_comparator=PilFrameComparator(threshold=diff_threshold),
         speech_transcriber=(
-            MlxWhisperTranscriber(model=asr_model) if asr_model else None
+            create_transcriber(asr_backend, asr_model) if asr_model else None
         ),
         ocr_keyframes_only=ocr_keyframes_only,
         vlm_gate=vlm_gate,
@@ -108,8 +118,13 @@ def main(argv: list[str] | None = None) -> int:
         help="OCRスキップの画面差分閾値（0.0〜1.0、既定: 0.02）",
     )
     parser.add_argument(
-        "--asr-model", default=DEFAULT_ASR_MODEL,
-        help=f"音声認識モデル（MLX形式のHFリポジトリ、既定: {DEFAULT_ASR_MODEL}）",
+        "--asr-backend", choices=["auto", "mlx", "faster"], default="auto",
+        help="ASRバックエンド（auto: Apple Silicon→mlx / それ以外→faster、既定: auto）",
+    )
+    parser.add_argument(
+        "--asr-model", default=None,
+        help="音声認識モデル（未指定時はバックエンド既定: "
+        f"mlx={DEFAULT_ASR_MODEL} / faster={DEFAULT_FASTER_ASR_MODEL}）",
     )
     parser.add_argument(
         "--no-asr", action="store_true", help="音声認識を無効化する"
@@ -148,7 +163,15 @@ def main(argv: list[str] | None = None) -> int:
         if not video.exists():
             parser.error(f"動画が見つかりません: {video}")
 
-    asr_model: str | None = None if args.no_asr else args.asr_model
+    asr_backend = resolve_backend(args.asr_backend)
+    if not args.no_asr:
+        try:
+            ensure_backend_available(asr_backend)
+        except ValueError as exc:
+            parser.error(str(exc))
+    asr_model: str | None = (
+        None if args.no_asr else (args.asr_model or default_model_for(asr_backend))
+    )
     if asr_model and not all(has_audio_stream(v) for v in args.videos):
         print("音声トラックのない動画あり → 音声認識をスキップします")
         asr_model = None
@@ -164,6 +187,7 @@ def main(argv: list[str] | None = None) -> int:
             ocr_tier=args.ocr_tier,
             diff_threshold=args.diff_threshold,
             asr_model=asr_model,
+            asr_backend=asr_backend,
             ocr_keyframes_only=(args.mode == "meeting"),
             vlm_gate=(
                 VlmGateConfig(
@@ -187,7 +211,9 @@ def main(argv: list[str] | None = None) -> int:
         if len(args.videos) == 1:
             _run_single(use_case, args.videos[0], args.output_dir)
         else:
-            _run_batch(use_case, args.videos, args.output_dir, asr_model)
+            _run_batch(
+                use_case, args.videos, args.output_dir, asr_model, asr_backend
+            )
     return 0
 
 
@@ -209,12 +235,13 @@ def _run_batch(
     videos: list[Path],
     output_dir: Path,
     asr_model: str | None,
+    asr_backend: str = "mlx",
 ) -> None:
     if asr_model is None:
         # ASRなしでも2フェーズ構造は維持（Phase Aが空になるだけ）
         transcriber = _NullTranscriber()
     else:
-        transcriber = MlxWhisperTranscriber(model=asr_model)
+        transcriber = create_transcriber(asr_backend, asr_model)
     batch = BatchGenerateWorklog(
         transcriber=transcriber,
         use_case=use_case,

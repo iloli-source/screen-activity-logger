@@ -107,6 +107,39 @@ class TestBuildUseCase:
         )
         assert use_case.ocr_keyframes_only is False
 
+    def test_wires_faster_backend(self, tmp_path: Path) -> None:
+        """W6: asr_backend=fasterでFasterWhisperTranscriberが配線される（#16）。"""
+        from screen_activity_logger.infrastructure.faster_whisper_transcriber import (
+            FasterWhisperTranscriber,
+        )
+
+        use_case = build_use_case(
+            fps=0.5,
+            scene_threshold=0.08,
+            model="qwen3-vl:8b",
+            ocr_tolerance_seconds=2.0,
+            workdir=tmp_path,
+            asr_model="kotoba-tech/kotoba-whisper-v2.0-faster",
+            asr_backend="faster",
+        )
+        assert isinstance(use_case.speech_transcriber, FasterWhisperTranscriber)
+
+    def test_default_backend_is_mlx(self, tmp_path: Path) -> None:
+        """後方互換: asr_backend未指定は従来どおりmlx配線。"""
+        from screen_activity_logger.infrastructure.mlx_whisper_transcriber import (
+            MlxWhisperTranscriber,
+        )
+
+        use_case = build_use_case(
+            fps=0.5,
+            scene_threshold=0.08,
+            model="qwen3-vl:8b",
+            ocr_tolerance_seconds=2.0,
+            workdir=tmp_path,
+            asr_model="kaiinui/kotoba-whisper-v2.0-mlx",
+        )
+        assert isinstance(use_case.speech_transcriber, MlxWhisperTranscriber)
+
     def test_wires_speech_filter(self, tmp_path: Path) -> None:
         """F4: ASR幻覚フィルタが配線される（Issue #14）。"""
         from screen_activity_logger.domain.speech_filter import SpeechFilterConfig
