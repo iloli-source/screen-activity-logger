@@ -117,13 +117,16 @@ class TimelineMerger:
     def _collapse_consecutive(
         entries: Sequence[WorklogEntry],
     ) -> tuple[WorklogEntry, ...]:
-        # 同じ操作でもリソース（ファイル等）が変われば別エントリとして残す
+        # 同じ操作でもリソースや位置（スライド・ページ等）が変われば
+        # 別エントリとして残す（locationはページ遷移の事実情報、4AIレビューR1。
+        # focusはVLM推測で毎回揺れるため畳み込みキーに含めない）
         collapsed: list[WorklogEntry] = []
         for entry in entries:
-            if collapsed and (collapsed[-1].action, collapsed[-1].resource) == (
-                entry.action,
-                entry.resource,
-            ):
+            if collapsed and (
+                collapsed[-1].action,
+                collapsed[-1].resource,
+                collapsed[-1].location,
+            ) == (entry.action, entry.resource, entry.location):
                 continue
             collapsed.append(entry)
         return tuple(collapsed)

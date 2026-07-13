@@ -87,10 +87,12 @@ class GenerateWorklog:
         # 単発・バッチ両経路のチョークポイントで幻覚フィルタを適用（Issue #14）
         if self.speech_filter is not None:
             segments = filter_segments(segments, self.speech_filter)
+        # 発話はここで1回だけソートする（キーフレーム毎の再ソート排除、4AIレビューR1）
+        sorted_segments = sorted(segments, key=lambda s: s.start)
         ocr_by_frame = self._recognize_frames(frames)
         if self.speaker_attribution is not None:
-            segments = attribute_speakers(
-                segments,
+            sorted_segments = attribute_speakers(
+                sorted_segments,
                 self._speaker_observations(frames, ocr_by_frame),
                 self.speaker_attribution,
             )
@@ -99,7 +101,7 @@ class GenerateWorklog:
                 self.scene_describer.describe(
                     frame,
                     ocr_by_frame[frame.timestamp],
-                    speech=self._speech_near(frame, segments),
+                    speech=self._speech_near(frame, sorted_segments),
                 ),
                 ocr_lines=ocr_by_frame[frame.timestamp].lines,
             )
@@ -108,7 +110,7 @@ class GenerateWorklog:
         worklog = self.merger.merge(
             descriptions=descriptions,
             ocr_texts=ocr_by_frame.values(),
-            transcript_segments=segments,
+            transcript_segments=sorted_segments,
         )
         return self._attach_summaries(worklog)
 
@@ -199,11 +201,17 @@ class GenerateWorklog:
     def _speech_near(
         frame: Frame, segments: Sequence[TranscriptSegment]
     ) -> tuple[str, ...]:
-        center = frame.timestamp.seconds
+        """フレーム前後の発話（VLMコンテキスト用）。segmentsはソート済み前提。
+
+        窓との区間重複で判定する（開始点のみの判定では、窓直前に始まる
+        長い発話・窓末尾に掛かる発話が落ちる、4AIレビューR1）。
+        """
+        window_start = frame.timestamp.seconds - SPEECH_CONTEXT_WINDOW_SECONDS
+        window_end = frame.timestamp.seconds + SPEECH_CONTEXT_WINDOW_SECONDS
         return tuple(
             seg.text
-            for seg in sorted(segments, key=lambda s: s.start)
-            if abs(seg.start.seconds - center) <= SPEECH_CONTEXT_WINDOW_SECONDS
+            for seg in segments
+            if seg.start.seconds <= window_end and seg.end.seconds >= window_start
         )
 
     def _recognize_frames(self, frames: Sequence[Frame]) -> dict:

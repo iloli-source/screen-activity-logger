@@ -232,3 +232,22 @@ class TestAttachSpeechCollapse:
             transcript_segments=segments,
         )
         assert worklog.entries[0].speech == ("はい", "承知しました", "はい")
+
+
+class TestCollapsePreservesLocationChange:
+    """4AIレビューR1: 同一action/resourceでもlocation変化（ページ遷移等）は残す。"""
+
+    def test_location_change_is_not_collapsed(self) -> None:
+        merger = TimelineMerger(ocr_match_tolerance_seconds=1.0)
+        desc1 = ActivityDescription(
+            timestamp=VideoTimestamp(seconds=10.0), action="資料確認",
+            app_guess="PowerPoint", resource="提案書.pptx", location="スライド1",
+        )
+        desc2 = ActivityDescription(
+            timestamp=VideoTimestamp(seconds=20.0), action="資料確認",
+            app_guess="PowerPoint", resource="提案書.pptx", location="スライド2",
+        )
+
+        worklog = merger.merge(descriptions=[desc1, desc2], ocr_texts=[])
+
+        assert len(worklog.entries) == 2  # スライド遷移が畳み込まれない
