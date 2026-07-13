@@ -8,6 +8,9 @@ dependencies = [
     "paddlepaddle>=3.0",
     "ollama>=0.4",
     "pillow>=10.0",
+    # vllm-mlxバックエンド・発話要旨・サーバー到達性チェックが直接import
+    # （ollamaの推移的依存に頼らない、4AIレビューR1）
+    "httpx>=0.27",
 ]
 
 [project.optional-dependencies]
@@ -23,9 +26,10 @@ asr-faster = [
     "faster-whisper>=1.1",  # Windows/Linux/Intel Mac（MacでもCPU動作可）
 ]
 asr = [
-    # プラットフォーム自動選択のメタextra（既存 .[asr] ユーザー互換）
-    "mlx-whisper>=0.4; sys_platform == 'darwin' and platform_machine == 'arm64'",
-    "faster-whisper>=1.1; sys_platform != 'darwin' or platform_machine != 'arm64'",
+    # 全プラットフォームのフォールバック実体（auto解決と整合、4AIレビューR1）。
+    # Macの本線whisper.cppはPython依存でなく brew install whisper-cpp（README参照）。
+    # mlx-whisperは長時間入力で品質崩壊のため既定導入から除外（Issue #22、.[asr-mlx]で明示オプトイン）
+    "faster-whisper>=1.1",
 ]
 search = [
     # 活用層: 意味検索（Issue #5）。Ruri v3はCPUで動く軽量埋め込み
