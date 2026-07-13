@@ -52,6 +52,7 @@ class TestJsonlWorklogWriter:
             "focus": None,
             "ocr": ["pytest", "FAILED test_auth.py"],
             "speech": [],
+            "summary": None,
             "action": "テスト失敗箇所をエディタで確認している",
         }
 
