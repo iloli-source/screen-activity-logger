@@ -10,6 +10,7 @@ whisper.cppは同一kotoba重み（q5_0）で「fasterの品質×mlxの速度」
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 import tempfile
 from pathlib import Path
@@ -35,8 +36,9 @@ def segments_from_cpp_json(payload: dict) -> tuple[TranscriptSegment, ...]:
     """whisper-cli -oj のJSONをTranscriptSegment列に変換する。
 
     mlx版segments_from_result / faster版segments_from_faster_segmentsと対。
-    -oj出力にno_speech_prob/avg_logprobはないためNone（speech_filterは
-    None値をフィルタ対象にしない）。
+    no_speech_probはwhisper.cppのJSONに存在しないためNone。avg_logprobは
+    -ojf のトークン確率pから算出し、幻覚フィルタの第二防衛線を生かす
+    （4AIレビューR1: 旧実装は両方Noneでフィルタが素通しだった）。
     """
     segments = []
     for raw in payload.get("transcription", ()):
@@ -46,11 +48,23 @@ def segments_from_cpp_json(payload: dict) -> tuple[TranscriptSegment, ...]:
             end=float(offsets.get("to", 0)) / _MS_PER_SECOND,
             text=str(raw.get("text", "")),
             no_speech_prob=None,
-            avg_logprob=None,
+            avg_logprob=_avg_logprob_from_tokens(raw.get("tokens", ())),
         )
         if segment is not None:
             segments.append(segment)
     return tuple(segments)
+
+
+def _avg_logprob_from_tokens(tokens) -> float | None:
+    """トークン確率の対数平均（[_BEG_]等の特殊トークンは除外）。"""
+    probs = [
+        float(tok["p"])
+        for tok in tokens
+        if tok.get("p") and not str(tok.get("text", "")).startswith("[_")
+    ]
+    if not probs:
+        return None
+    return sum(math.log(p) for p in probs) / len(probs)
 
 
 class WhisperCppTranscriber:
@@ -78,7 +92,7 @@ class WhisperCppTranscriber:
                 "-m", str(self._model_path),
                 "-f", str(wav_path),
                 "-l", "ja",
-                "-oj",
+                "-ojf",  # full JSON（トークン確率つき）
                 "-of", str(output_prefix),
             ],
             check=True,

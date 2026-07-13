@@ -37,12 +37,17 @@ def is_reliable_segment(
     """セグメントを保持すべきかの真理値表（Issue #14）。"""
     if not has_verbal_content(segment.text):
         return False  # 記号のみ＝幻覚（確率と無関係に除去）
-    if segment.no_speech_prob is None or segment.avg_logprob is None:
-        return True  # 判断材料なし＝保持（後方互換）
-    return not (
-        segment.no_speech_prob > config.no_speech_threshold
-        and segment.avg_logprob < config.logprob_threshold
-    )
+    if segment.no_speech_prob is not None and segment.avg_logprob is not None:
+        # 両シグナルあり（mlx/faster）: 本家Whisper慣例のAND条件
+        return not (
+            segment.no_speech_prob > config.no_speech_threshold
+            and segment.avg_logprob < config.logprob_threshold
+        )
+    if segment.avg_logprob is not None:
+        # logprobのみ（whisper.cpp）: 単独でも極端な低信頼は除去
+        # （平均トークン確率 e^-1≈37% 未満は実発話でまず出ない、4AIレビューR1）
+        return segment.avg_logprob >= config.logprob_threshold
+    return True  # 判断材料なし＝保持（後方互換）
 
 
 def filter_segments(

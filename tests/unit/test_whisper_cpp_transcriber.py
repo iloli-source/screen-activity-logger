@@ -43,8 +43,28 @@ class TestSegmentsFromCppJson:
         assert len(segments) == 1
         assert segments[0].text == "有効な発話"
 
-    def test_probs_are_none(self) -> None:
-        # whisper-cliの-oj出力にはno_speech_prob/avg_logprobがない
+    def test_avg_logprob_computed_from_token_probs(self) -> None:
+        # -ojf のトークン確率から算出（幻覚フィルタの防衛線を生かす、4AIレビューR1）
+        import math
+
+        payload = _payload({
+            "offsets": {"from": 0, "to": 500},
+            "text": "発話",
+            "tokens": [
+                {"text": "[_BEG_]", "p": 0.8},  # 特殊トークンは除外
+                {"text": "発", "p": 0.9},
+                {"text": "話", "p": 0.6},
+            ],
+        })
+
+        (segment,) = segments_from_cpp_json(payload)
+
+        expected = (math.log(0.9) + math.log(0.6)) / 2
+        assert segment.avg_logprob is not None
+        assert abs(segment.avg_logprob - expected) < 1e-9
+        assert segment.no_speech_prob is None  # cppでは取得不能のままNone
+
+    def test_probs_are_none_without_tokens(self) -> None:
         payload = _payload({"offsets": {"from": 0, "to": 500}, "text": "発話"})
 
         (segment,) = segments_from_cpp_json(payload)
@@ -92,7 +112,7 @@ class TestWhisperCppTranscriber:
         assert cmd[0] == "whisper-cli"
         assert cmd[cmd.index("-m") + 1] == str(model)
         assert cmd[cmd.index("-l") + 1] == "ja"
-        assert "-oj" in cmd
+        assert "-ojf" in cmd
         assert len(segments) == 1
         assert segments[0].start.seconds == 1.0
         assert segments[0].end.seconds == 3.5

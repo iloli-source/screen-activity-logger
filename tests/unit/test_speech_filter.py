@@ -50,11 +50,12 @@ class TestIsReliableSegment:
         assert is_reliable_segment(segment, SpeechFilterConfig()) is False
 
     def test_missing_metadata_is_kept(self) -> None:
-        # 判断材料なし＝保持（後方互換: 旧経路のセグメントを巻き込まない）
+        # 判断材料なし＝保持。no_speech単独も保持（AND条件の片翼）。
+        # avg_logprob単独の極端な低信頼は除去（whisper.cpp対応、4AIレビューR1）
         config = SpeechFilterConfig()
         assert is_reliable_segment(_segment("はい"), config) is True
         assert is_reliable_segment(_segment("はい", no_speech_prob=0.9), config) is True
-        assert is_reliable_segment(_segment("はい", avg_logprob=-1.5), config) is True
+        assert is_reliable_segment(_segment("はい", avg_logprob=-1.5), config) is False
 
     def test_high_no_speech_and_low_logprob_is_rejected(self) -> None:
         segment = _segment("ご視聴ありがとうございました", 0.9, -1.5)
@@ -127,3 +128,47 @@ class TestCollapseRepeatedLines:
         )
 
         assert collapse_repeated_lines(()) == ()
+
+
+class TestLogprobOnlySignal:
+    """4AIレビューR1: whisper.cpp（no_speech_probなし）でも第二防衛線を生かす。"""
+
+    def test_low_logprob_alone_rejects(self) -> None:
+        from screen_activity_logger.domain.models import (
+            TranscriptSegment,
+            VideoTimestamp,
+        )
+        from screen_activity_logger.domain.speech_filter import (
+            SpeechFilterConfig,
+            is_reliable_segment,
+        )
+
+        segment = TranscriptSegment(
+            start=VideoTimestamp(seconds=0.0),
+            end=VideoTimestamp(seconds=1.0),
+            text="ご視聴ありがとうございました",
+            no_speech_prob=None,
+            avg_logprob=-2.5,
+        )
+
+        assert is_reliable_segment(segment, SpeechFilterConfig()) is False
+
+    def test_healthy_logprob_alone_keeps(self) -> None:
+        from screen_activity_logger.domain.models import (
+            TranscriptSegment,
+            VideoTimestamp,
+        )
+        from screen_activity_logger.domain.speech_filter import (
+            SpeechFilterConfig,
+            is_reliable_segment,
+        )
+
+        segment = TranscriptSegment(
+            start=VideoTimestamp(seconds=0.0),
+            end=VideoTimestamp(seconds=1.0),
+            text="通常の発話です",
+            no_speech_prob=None,
+            avg_logprob=-0.2,
+        )
+
+        assert is_reliable_segment(segment, SpeechFilterConfig()) is True
