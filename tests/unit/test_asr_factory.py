@@ -120,3 +120,41 @@ class TestCreateTranscriber:
     def test_unknown_backend_raises(self) -> None:
         with pytest.raises(ValueError):
             create_transcriber("unknown", "m")
+
+
+class TestSilenceAwareTranscriber:
+    """4AIレビューR1: バッチ中1本の無音動画が全動画のASRを無効化するバグの回帰。"""
+
+    class _Inner:
+        def __init__(self) -> None:
+            self.calls: list = []
+
+        def transcribe(self, video_path):
+            self.calls.append(video_path)
+            return ("seg",)
+
+    def test_transcribes_video_with_audio(self, tmp_path) -> None:
+        from screen_activity_logger.infrastructure.asr_factory import (
+            SilenceAwareTranscriber,
+        )
+
+        inner = self._Inner()
+        transcriber = SilenceAwareTranscriber(inner, has_audio=lambda p: True)
+
+        result = transcriber.transcribe(tmp_path / "a.mp4")
+
+        assert result == ("seg",)
+        assert len(inner.calls) == 1
+
+    def test_skips_silent_video_without_calling_inner(self, tmp_path) -> None:
+        from screen_activity_logger.infrastructure.asr_factory import (
+            SilenceAwareTranscriber,
+        )
+
+        inner = self._Inner()
+        transcriber = SilenceAwareTranscriber(inner, has_audio=lambda p: False)
+
+        result = transcriber.transcribe(tmp_path / "silent.mp4")
+
+        assert result == ()
+        assert inner.calls == []  # 無音動画はASR本体を呼ばない（他動画に影響しない）

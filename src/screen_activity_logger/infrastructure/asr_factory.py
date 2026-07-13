@@ -130,3 +130,27 @@ def create_transcriber(backend: str, model: str) -> SpeechTranscriber:
     if backend == "cpp":
         return WhisperCppTranscriber(model_path=model)
     raise ValueError(f"未知のASRバックエンド: {backend}")
+
+
+class SilenceAwareTranscriber:
+    """動画単位で音声トラック有無を判定し、無音動画だけASRをスキップする。
+
+    4AIレビューR1: 旧実装はバッチ中1本でも無音があると全動画のASRを
+    無効化していた（cli.pyのall()判定）。判定関数は注入可能（テスト用）。
+    """
+
+    def __init__(self, inner: SpeechTranscriber, has_audio=None) -> None:
+        if has_audio is None:
+            from screen_activity_logger.infrastructure.ffmpeg_extractor import (
+                has_audio_stream,
+            )
+
+            has_audio = has_audio_stream
+        self._inner = inner
+        self._has_audio = has_audio
+
+    def transcribe(self, video_path: Path) -> tuple:
+        if not self._has_audio(video_path):
+            print(f"音声トラックなし → ASRスキップ: {video_path.name}", flush=True)
+            return ()
+        return tuple(self._inner.transcribe(video_path))

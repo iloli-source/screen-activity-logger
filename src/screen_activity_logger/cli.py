@@ -24,6 +24,7 @@ from screen_activity_logger.infrastructure.frame_comparator import (
     PilFrameComparator,
 )
 from screen_activity_logger.infrastructure.asr_factory import (
+    SilenceAwareTranscriber,
     create_transcriber,
     default_model_for,
     ensure_backend_available,
@@ -230,8 +231,10 @@ def main(argv: list[str] | None = None) -> int:
     asr_model: str | None = (
         None if args.no_asr else (args.asr_model or default_model_for(asr_backend))
     )
-    if asr_model and not all(has_audio_stream(v) for v in args.videos):
-        print("音声トラックのない動画あり → 音声認識をスキップします")
+    # 無音判定は動画単位（バッチでの一律無効化は4AIレビューR1で修正）。
+    # 全滅時のみモデルロード自体を省く
+    if asr_model and not any(has_audio_stream(v) for v in args.videos):
+        print("全動画に音声トラックなし → 音声認識をスキップします")
         asr_model = None
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -244,7 +247,9 @@ def main(argv: list[str] | None = None) -> int:
             workdir=Path(tmp),
             ocr_tier=args.ocr_tier,
             diff_threshold=args.diff_threshold,
-            asr_model=asr_model,
+            # バッチはPhase Aの事前ASRを使うためuse_case側transcriberは不要
+            # （二重生成の排除、4AIレビューR1）
+            asr_model=asr_model if len(args.videos) == 1 else None,
             asr_backend=asr_backend,
             vlm_timeout_seconds=args.vlm_timeout,
             vlm_backend=args.vlm_backend,
@@ -312,7 +317,10 @@ def _run_batch(
         # ASRなしでも2フェーズ構造は維持（Phase Aが空になるだけ）
         transcriber = _NullTranscriber()
     else:
-        transcriber = create_transcriber(asr_backend, asr_model)
+        # 無音動画は動画単位でスキップ（他の動画のASRは生きる）
+        transcriber = SilenceAwareTranscriber(
+            create_transcriber(asr_backend, asr_model)
+        )
     batch = BatchGenerateWorklog(
         transcriber=transcriber,
         use_case=use_case,
