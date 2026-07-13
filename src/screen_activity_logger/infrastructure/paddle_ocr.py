@@ -32,7 +32,16 @@ class PaddleOcrRecognizer:
         self._engine: Any | None = None
 
     def recognize(self, frame: Frame) -> OcrText:
-        result = self._get_engine().predict(str(frame.path))
+        try:
+            result = self._get_engine().predict(str(frame.path))
+        except Exception as error:  # noqa: BLE001 — 1フレームの失敗でバッチを止めない
+            # VLMアダプタのフォールバックと同方針（4AIレビューR1）
+            print(
+                f"OCR失敗 t={frame.timestamp}:"
+                f" {type(error).__name__}: {error}",
+                flush=True,
+            )
+            return OcrText(timestamp=frame.timestamp, lines=())
         lines = self._extract_texts(result)
         return OcrText(timestamp=frame.timestamp, lines=lines)
 
