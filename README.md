@@ -144,6 +144,22 @@ ln -s "$(pwd)/skills/screen-activity-logger" ~/.claude/skills/screen-activity-lo
 
 **実測済みの限界（Issue #10）**: 話者ビューに追従する録画でのみ有効（precision 62-84%）。ギャラリービューやタイル固定のボット録画では帰属をほぼ棄却する（安全側）が、残る帰属も信頼できないため**既定OFF**。確実な話者分離が必要な場合は音声ベース（pyannote）ハイブリッドの対応を待つこと（Issue #20）。
 
+
+### VLMバックエンド（vllm-mlx推奨・実測約40倍）
+
+Apple Siliconでは vllm-mlx バックエンドが Ollama比 **約40倍** 高速（実測11秒/フレーム vs 420-600秒、Issue #8）。
+
+```bash
+# 導入（初回のみ）
+pip install vllm-mlx   # 専用venv推奨
+# サーバー起動（利用時）
+vllm-mlx serve mlx-community/Qwen3-VL-8B-Instruct-4bit --port 8991
+# 実行
+.venv/bin/screen-activity-logger 会議.mp4 --mode meeting --vlm-backend vllm-mlx -o out/
+```
+
+実測（M4 Air 24GB）: 5分会議クリップが**約63秒**で完走（Ollamaでは15分〜80分超）。品質は同等（同一プロンプト・同一パース）。
+
 ### VLMテレメトリの読み方（Issue #15）
 
 実行ログに全VLM呼び出しの所要時間が出る:
