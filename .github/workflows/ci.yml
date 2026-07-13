@@ -39,7 +39,7 @@ jobs:
       - name: "Run tests (fast: unit + ffmpeg integration)"
         # slowマーカー（PaddleOCRモデルDL・実VLM・e2e）はローカル/実機で実行する
         # uv run: .venv/bin/ のPOSIXパスを排除しWindowsでも同一コマンドにする
-        run: uv run --no-sync pytest -m "not slow" --cov --cov-report=term --cov-fail-under=70
+        run: uv run --no-sync pytest -m "not slow" --cov --cov-report=term --cov-fail-under=80
 
       # 注: フルスイート（OCR/e2e含む）はM4実機で `.venv/bin/pytest --cov` を実行。
       # macOSランナーはプライベートリポジトリでは課金が重いためCIでは回さない。

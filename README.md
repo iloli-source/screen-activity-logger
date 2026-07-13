@@ -37,7 +37,7 @@ PC画面を録画した動画（MP4）を入力に、**完全ローカル**で *
 | **ASR層** | kotoba-whisper v2.0（Mac: whisper.cpp Metal / Windows・Linux: faster-whisper、自動選択） | 日本語特化・無音幻覚フィルタ（#14）。2時間実測でmlx-whisperは品質崩壊のため非推奨化（#22）。音声なしは自動スキップ |
 | **VLMゲート** | OCRトークンJaccard（meetingモード） | 話者切替のVLM無駄撃ちを抑制（3者設計協議で採択、Issue #13） |
 | **出力** | JSONL（機械用・一次情報保持）＋Markdown（人間用） | |
-| **活用層（将来）** | Ruri v3 + Faiss / Qwen3-VL-Embedding | 意味検索・分類・RAG（Issue #5） |
+| **活用層** | Ruri v3 + numpy索引（`sal-search`実装済み） | 意味検索。分類・RAGは将来 |
 
 ## パイプライン
 
@@ -105,7 +105,7 @@ ollama pull qwen3-vl:8b
 | OCR | 全フレーム（差分スキップあり） | キーフレームのみ |
 | VLM | 全キーフレーム（**ステップを落とさない**） | 文字が変わった時だけ（話者切替を無視） |
 
-複数動画は**バッチ2フェーズ処理**（全動画ASR→各動画OCR/VLM。ASRモデルのロードが1回で済む）:
+複数動画は**バッチ2フェーズ処理**（全動画ASR→各動画OCR/VLM。faster/mlxはモデルロードが1回で済む。whisper.cppは動画毎にプロセス起動だがロードは軽量。無音動画は動画単位で自動スキップ）:
 ```bash
 .venv/bin/python -m screen_activity_logger.cli 会議1.mp4 会議2.mp4 --mode meeting -o out/
 # → out/会議1/worklog.md, out/会議2/worklog.md …
@@ -231,9 +231,7 @@ uv run python -m screen_activity_logger.cli 録画.mp4 -o out/
 ## 開発状況（Issue駆動）
 
 進行状況は [GitHub Issues](https://github.com/iloli-source/screen-activity-logger/issues) が正。
-- ✅ 完了: 最小パイプライン(#1)、ASR層(#6)、バッチ2フェーズ＋会議モード(#7)、戦略決定・Apache-2.0でOSS化(#9)、資産カタログ(#11)、構造化コンテキスト抽出(#12)、VLMゲート(#13)、ASR幻覚フィルタ＋ウォームアップ(#14)、VLMリトライ＋テレメトリ(#15)、Windows対応(#16)、resource浄化(#17)、滞留時間トラッキング(#18)
-- 🔄 進行中: OSS公開準備(#19)、活用層・意味検索(#5)
-- 📥 キュー: 高速化検証(#8)、VRAM実測・間引きチューニング(#2)、OCR比較(#4)、日本語品質改善(#3)、映像ベース話者特定(#10)
+- ✅ #1〜#23 すべてクローズ済み（2026-07-14時点）。意味検索(#5)・vllm-mlx 40倍高速化(#8)・長時間録画対応(#22)・発話要旨(#23)を含む
 
 設計原則（Issue #9）: **コア3軸（正確・速い・安全）を強化するものだけ採用**／タダの付加価値（計算済みデータの再利用）を先に取り尽くす／高価な付加価値はモード化。
 
@@ -248,6 +246,10 @@ uv run python -m screen_activity_logger.cli 録画.mp4 -o out/
 - 主要依存: `paddleocr`+`paddlepaddle`（CPU）, `ollama`, `pillow`, （ASR時）whisper.cpp（brew）または `faster-whisper`
 
 ## プライバシー
+
+**ローカル成果物の取り扱い**: フレームPNGは一時領域（自動削除）、worklog.jsonl の
+`ocr`/`speech` は一次情報を無加工で保持する（検索・監査価値のため）。機密画面を含む
+録画の出力は通常のファイルと同様にアクセス制御下で管理すること。
 
 画面録画にはパスワードや個人情報が含まれ得る。本ツールは完全ローカルで動作するが、実録画（`*.mp4`）や生成ログはリポジトリに含めない（`.gitignore` で除外済み）。保存先の暗号化も検討すること。
 
