@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from screen_activity_logger.application.ports import SceneDescriber
+from screen_activity_logger.application.ports import (
+    SceneDescriber,
+    SpeechSummarizer,
+)
+from screen_activity_logger.infrastructure.chat_summarizer import (
+    OllamaChatSummarizer,
+    OpenAIChatSummarizer,
+)
 from screen_activity_logger.infrastructure.ollama_describer import (
     OllamaSceneDescriber,
 )
@@ -57,3 +64,20 @@ def ensure_backend_available(backend: str, base_url: str = DEFAULT_VLLM_URL) -> 
             f" {DEFAULT_VLLM_MODEL} --port 8991"
             "（導入: pip install vllm-mlx。README参照）"
         ) from error
+
+
+def create_summarizer(
+    backend: str,
+    model: str,
+    base_url: str = DEFAULT_VLLM_URL,
+) -> SpeechSummarizer:
+    """VLMと同一バックエンド・モデルで発話要旨アダプタを生成する（Issue #23）。
+
+    モデル名の読み替え規則はcreate_describerと同一（挙動差の排除）。
+    """
+    if backend == "ollama":
+        return OllamaChatSummarizer(model=model)
+    if backend == "vllm-mlx":
+        resolved_model = DEFAULT_VLLM_MODEL if ":" in model else model
+        return OpenAIChatSummarizer(model=resolved_model, base_url=base_url)
+    raise ValueError(f"未知のVLMバックエンド: {backend}")

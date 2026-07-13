@@ -61,3 +61,43 @@ class TestEnsureBackendAvailable:
 
         monkeypatch.setattr("httpx.get", lambda url, timeout=None: OkResponse())
         ensure_backend_available("vllm-mlx")
+
+
+class TestCreateSummarizer:
+    def test_ollama_backend(self) -> None:
+        from screen_activity_logger.infrastructure.chat_summarizer import (
+            OllamaChatSummarizer,
+        )
+        from screen_activity_logger.infrastructure.vlm_factory import (
+            create_summarizer,
+        )
+
+        summarizer = create_summarizer("ollama", "qwen3-vl:8b")
+
+        assert isinstance(summarizer, OllamaChatSummarizer)
+
+    def test_vllm_backend_translates_ollama_model_name(self) -> None:
+        from screen_activity_logger.infrastructure.chat_summarizer import (
+            OpenAIChatSummarizer,
+        )
+        from screen_activity_logger.infrastructure.openai_chat_describer import (
+            DEFAULT_VLLM_MODEL,
+        )
+        from screen_activity_logger.infrastructure.vlm_factory import (
+            create_summarizer,
+        )
+
+        summarizer = create_summarizer("vllm-mlx", "qwen3-vl:8b")
+
+        assert isinstance(summarizer, OpenAIChatSummarizer)
+        assert summarizer._model == DEFAULT_VLLM_MODEL
+
+    def test_unknown_backend_raises(self) -> None:
+        import pytest
+
+        from screen_activity_logger.infrastructure.vlm_factory import (
+            create_summarizer,
+        )
+
+        with pytest.raises(ValueError):
+            create_summarizer("unknown", "m")

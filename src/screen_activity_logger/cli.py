@@ -43,6 +43,7 @@ from screen_activity_logger.infrastructure.openai_chat_describer import (
 )
 from screen_activity_logger.infrastructure.vlm_factory import (
     create_describer,
+    create_summarizer,
     ensure_backend_available as ensure_vlm_available,
 )
 from screen_activity_logger.infrastructure.paddle_ocr import PaddleOcrRecognizer
@@ -76,6 +77,7 @@ def build_use_case(
     speaker_attribution: SpeakerAttributionConfig | None = None,
     vlm_backend: str = "ollama",
     vlm_url: str = DEFAULT_VLLM_URL,
+    speech_summary: bool = False,
 ) -> GenerateWorklog:
     """設定値から全アダプタを組み立てたユースケースを返す。
 
@@ -103,6 +105,12 @@ def build_use_case(
         vlm_gate=vlm_gate,
         speech_filter=speech_filter,
         speaker_attribution=speaker_attribution,
+        # 要旨はVLMと同一バックエンド・モデルを使い回す（追加メモリゼロ、#23）
+        speech_summarizer=(
+            create_summarizer(vlm_backend, model, base_url=vlm_url)
+            if speech_summary
+            else None
+        ),
     )
 
 
@@ -178,6 +186,11 @@ def main(argv: list[str] | None = None) -> int:
         help="VLM呼び出しの試行毎タイムアウト秒（タイムアウト時は1回リトライ、既定: 300）",
     )
     parser.add_argument(
+        "--speech-summary", action="store_true",
+        help="発話の1文要旨（🧭）をエントリに付与する（VLMと同一モデルで生成、"
+        "処理時間+1割弱。発話3行以上のエントリが対象、既定OFF）",
+    )
+    parser.add_argument(
         "--speaker-attribution", action="store_true",
         help="映像ベース話者特定を有効化する（実験的。話者ビュー追従の録画のみ有効、"
         "ギャラリー/固定タイル録画では誤帰属リスクあり。meetingモード専用）",
@@ -236,6 +249,7 @@ def main(argv: list[str] | None = None) -> int:
             vlm_timeout_seconds=args.vlm_timeout,
             vlm_backend=args.vlm_backend,
             vlm_url=args.vlm_url,
+            speech_summary=args.speech_summary,
             ocr_keyframes_only=(args.mode == "meeting"),
             # 実測（Issue #10）でボット録画はタイル固定が多く前提が崩れるため
             # 既定OFFのオプトイン（話者ビュー追従録画でのみ有効な実験的機能）
