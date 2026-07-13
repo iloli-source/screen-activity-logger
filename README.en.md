@@ -29,7 +29,7 @@ Editing a unit-price cell                            ← action (Qwen3-VL)
 | Frame extraction | ffmpeg (uniform fps + scene detection, long edge 1024px) | |
 | OCR | PaddleOCR PP-OCRv6 tiny/small/medium (Japanese, CPU) | diff-based skipping; keyframes-only in meeting mode |
 | VLM | Qwen3-VL:8B via Ollama (timeout + retry + fallback) | structured 5-field output (app/resource/location/focus/action) |
-| ASR | kotoba-whisper v2.0 (macOS: MLX / Windows & Linux: faster-whisper, auto-selected) | Japanese-specialized; silent videos auto-skip |
+| ASR | kotoba-whisper v2.0 (macOS: whisper.cpp Metal / Windows & Linux: faster-whisper, auto-selected) | Japanese-specialized; mlx-whisper deprecated after 2-hour tests showed content collapse (#22); silent videos auto-skip |
 | VLM gate | OCR-token Jaccard (meeting mode) | suppresses wasted VLM calls on speaker-view switches |
 | Output | JSONL (machine, keeps raw evidence) + Markdown (human) | includes per-entry dwell time and per-app time summary |
 
@@ -57,7 +57,9 @@ uv pip install -e . ; uv pip install -e ".[dev]" ; uv pip install -e ".[asr-fast
 uv run python -m screen_activity_logger.cli recording.mp4 -o out/
 ```
 
-ASR uses faster-whisper (CTranslate2) with automatic CUDA detection; CPU int8 works with zero extra setup. For NVIDIA GPUs add `pip install nvidia-cublas-cu12 nvidia-cudnn-cu12`.
+On macOS install whisper.cpp for the fast ASR path (`brew install whisper-cpp` plus a kotoba-whisper
+GGUF at `~/.cache/screen-activity-logger/kotoba-whisper-v2.0-q5_0.bin`; without it the tool falls back
+to faster-whisper — slower but correct). On Windows/Linux, ASR uses faster-whisper (CTranslate2) with automatic CUDA detection; CPU int8 works with zero extra setup. For NVIDIA GPUs add `pip install nvidia-cublas-cu12 nvidia-cudnn-cu12`.
 
 
 ## Use from Claude Code (skill)
@@ -86,7 +88,9 @@ Batch multiple videos in one command (two-phase: all ASR first, then per-video O
 
 ```
 --mode screencast|meeting     processing profile (default: screencast)
---asr-backend auto|mlx|faster ASR backend (auto: Apple Silicon→mlx, else→faster)
+--asr-backend auto|cpp|faster|mlx ASR backend (auto: Apple Silicon→cpp via whisper.cpp,
+                              falls back to faster when whisper.cpp is missing; other OSes→faster.
+                              mlx is deprecated — its output collapses on long recordings, Issue #22)
 --no-asr                      disable speech recognition
 --ocr-tier tiny|small|medium  OCR model size (default: small)
 --vlm-timeout 300             per-attempt VLM timeout seconds (auto-retry once on timeout, with per-call telemetry)

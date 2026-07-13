@@ -34,7 +34,7 @@ PC画面を録画した動画（MP4）を入力に、**完全ローカル**で *
 | **フレーム抽出** | ffmpeg（fps均等サンプリング＋シーン変化検出、長辺1024px縮小） | 視覚トークン超過の実測に基づく |
 | **OCR層** | PaddleOCR PP-OCRv6 tiny/small/medium（日本語、CPU） | 画面差分によるスキップ＋会議モードでキーフレーム限定 |
 | **VLM層** | Qwen3-VL:8B（Ollama、タイムアウト＋1回リトライ＋推論テレメトリ） | 構造化5フィールド出力・幻覚resource品質ゲート（#15/#17） |
-| **ASR層** | kotoba-whisper v2.0（Mac: MLX / Windows・Linux: faster-whisper、自動選択） | 日本語特化・無音幻覚フィルタ（#14）。音声なしは自動スキップ |
+| **ASR層** | kotoba-whisper v2.0（Mac: whisper.cpp Metal / Windows・Linux: faster-whisper、自動選択） | 日本語特化・無音幻覚フィルタ（#14）。2時間実測でmlx-whisperは品質崩壊のため非推奨化（#22）。音声なしは自動スキップ |
 | **VLMゲート** | OCRトークンJaccard（meetingモード） | 話者切替のVLM無駄撃ちを抑制（3者設計協議で採択、Issue #13） |
 | **出力** | JSONL（機械用・一次情報保持）＋Markdown（人間用） | |
 | **活用層（将来）** | Ruri v3 + Faiss / Qwen3-VL-Embedding | 意味検索・分類・RAG（Issue #5） |
@@ -43,7 +43,7 @@ PC画面を録画した動画（MP4）を入力に、**完全ローカル**で *
 
 ```
 [video.mp4]
-   ├─ 音声 ──► kotoba-whisper(MLX) ─────────────► 発話セグメント
+   ├─ 音声 ──► kotoba-whisper(whisper.cpp) ──────► 発話セグメント
    └─ 映像 ──► ffmpeg（2秒毎＋シーン変化＝キーフレーム、長辺1024px）
                  │
                  ├─► PaddleOCR … 画面差分でスキップ（会議モード: キーフレームのみ）
@@ -80,9 +80,12 @@ ollama pull qwen3-vl:8b
 #   --model qwen3-vl:8b       OllamaのVLMモデル
 #   --ocr-tier small          OCRモデル規模 tiny/small/medium（既定small）
 #   --diff-threshold 0.02     画面差分によるOCRスキップの閾値
-#   --asr-backend auto        ASRバックエンド auto/mlx/faster（auto: Apple Silicon→mlx、それ以外→faster）
-#   --asr-model <repo>        音声認識モデル（未指定時はバックエンド既定:
-#                             mlx=kaiinui/kotoba-whisper-v2.0-mlx / faster=kotoba-tech/kotoba-whisper-v2.0-faster）
+#   --asr-backend auto        ASRバックエンド auto/cpp/faster/mlx
+#                             （auto: Apple Silicon→cpp、whisper.cpp未導入時とそれ以外のOS→faster。
+#                             mlxは長時間入力で品質崩壊のため非推奨・明示指定のみ、Issue #22）
+#   --asr-model <repo|path>   音声認識モデル（未指定時はバックエンド既定:
+#                             cpp=~/.cache/screen-activity-logger/kotoba-whisper-v2.0-q5_0.bin /
+#                             faster=kotoba-tech/kotoba-whisper-v2.0-faster）
 #   --no-asr                  音声認識を無効化（音声トラックなしは自動スキップ）
 #   --vlm-skip-threshold 0.85 VLMゲートのJaccard閾値（meeting時）
 #   --vlm-min-gap 10          VLM呼び出しの最小間隔秒（debounce）
@@ -137,6 +140,27 @@ ln -s "$(pwd)/skills/screen-activity-logger" ~/.claude/skills/screen-activity-lo
 以降、Claude Code で「この録画を作業ログにして」と頼むと前提チェック〜実行〜結果要約まで行う。
 
 
+
+### ASRセットアップ（Mac推奨: whisper.cpp）
+
+2時間級の長時間録画の実測（Issue #22）で、ASR3実装の適性が確定した:
+
+| バックエンド | 内容の健全性 | 速度（10分音声） | 位置づけ |
+|---|---|---|---|
+| **cpp**（whisper.cpp Metal） | ✅ 線形 | **39秒** | **Mac既定**（auto解決） |
+| faster（CTranslate2 CPU） | ✅ 線形 | 319秒 | Windows/Linux既定・Macフォールバック |
+| mlx（mlx-whisper） | ❌ 長尺で内容崩壊（10分で136字） | — | **非推奨**・明示指定のみ |
+
+```bash
+# Mac（初回のみ）: whisper.cppバイナリ導入
+brew install whisper-cpp
+# kotoba-whisper v2.0のGGUF（q5_0）を既定パスに配置
+#   ~/.cache/screen-activity-logger/kotoba-whisper-v2.0-q5_0.bin
+#   （whisper.cpp付属のconvert-h5-to-ggml.py＋whisper-quantizeで
+#    kotoba-tech/kotoba-whisper-v2.0 から変換、または --asr-model <パス> で任意のGGUFを指定）
+```
+
+whisper.cpp未導入でも動く（autoがfaster-whisperへフォールバック。遅いが正しい）。
 
 ### 話者特定（実験的、オプトイン）
 
@@ -193,7 +217,7 @@ uv run python -m screen_activity_logger.cli 録画.mp4 -o out/
 ### 「Macと同じ結果」の定義（Issue #16）
 
 1. **構造的同一（保証）**: domain/application層にOS・バックエンド分岐は1バイトもない。差し替わるのはASRアダプタ1個のみで、セグメント正規化は共通純粋関数（`asr_segments.build_segment`）に一元化 → **同一のセグメント列が入れば下流の出力はビット同一**
-2. **意味的同等（実測）**: mlxとfasterは同一モデル（kotoba-whisper v2.0）の変換版だが、トランスクリプトは完全一致しない。差はWhisper自体の実行毎ゆらぎと同オーダー（Issue #16の実測記録参照）
+2. **意味的同等（実測）**: cpp/fasterは同一モデル（kotoba-whisper v2.0）の変換版だが、トランスクリプトは完全一致しない。差はWhisper自体の実行毎ゆらぎと同オーダー（Issue #16/#22の実測記録参照）
 3. **既知の差分**: faster側は `condition_on_previous_text=False`（kotoba公式推奨・幻覚連鎖の抑制）、`chunk_length=15`、beam_size=5。いずれも品質中立〜改善方向
 
 ## 開発状況（Issue駆動）
@@ -213,7 +237,7 @@ uv run python -m screen_activity_logger.cli 録画.mp4 -o out/
 - Python 3.12（venvは `uv venv -p 3.12`）
 - ffmpeg（フレーム抽出・音声抽出・ffprobe）
 - Ollama 0.30以降（qwen3-vl:8b）
-- 主要依存: `paddleocr`+`paddlepaddle`（CPU）, `ollama`, `pillow`, （ASR時）`mlx-whisper` または `faster-whisper`
+- 主要依存: `paddleocr`+`paddlepaddle`（CPU）, `ollama`, `pillow`, （ASR時）whisper.cpp（brew）または `faster-whisper`
 
 ## プライバシー
 
