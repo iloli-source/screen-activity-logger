@@ -207,3 +207,35 @@ class TestBuildUseCase:
         assert use_case.frame_comparator.threshold == 0.05
         kwargs = use_case.text_recognizer._engine_kwargs()
         assert kwargs["text_detection_model_name"] == "PP-OCRv6_tiny_det"
+
+
+class TestSpeakerAttributionWiring:
+    """S6（Issue #10）: 話者特定のCLI配線。"""
+
+    def test_wires_speaker_attribution(self, tmp_path: Path) -> None:
+        from screen_activity_logger.domain.speaker_attribution import (
+            SpeakerAttributionConfig,
+        )
+
+        use_case = build_use_case(
+            fps=0.5,
+            scene_threshold=0.08,
+            model="qwen3-vl:8b",
+            ocr_tolerance_seconds=2.0,
+            workdir=tmp_path,
+            speaker_attribution=SpeakerAttributionConfig(
+                switch_tolerance_seconds=5.0
+            ),
+        )
+        assert use_case.speaker_attribution is not None
+        assert use_case.speaker_attribution.switch_tolerance_seconds == 5.0
+
+    def test_default_has_no_speaker_attribution(self, tmp_path: Path) -> None:
+        use_case = build_use_case(
+            fps=0.5,
+            scene_threshold=0.08,
+            model="qwen3-vl:8b",
+            ocr_tolerance_seconds=2.0,
+            workdir=tmp_path,
+        )
+        assert use_case.speaker_attribution is None

@@ -11,6 +11,9 @@ from screen_activity_logger.application.use_cases import (
     GenerateWorklog,
 )
 from screen_activity_logger.domain.services import TimelineMerger
+from screen_activity_logger.domain.speaker_attribution import (
+    SpeakerAttributionConfig,
+)
 from screen_activity_logger.domain.speech_filter import SpeechFilterConfig
 from screen_activity_logger.domain.vlm_gate import VlmGateConfig
 from screen_activity_logger.infrastructure.ffmpeg_extractor import (
@@ -64,6 +67,7 @@ def build_use_case(
     speech_filter: SpeechFilterConfig | None = None,
     asr_backend: str = "mlx",
     vlm_timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    speaker_attribution: SpeakerAttributionConfig | None = None,
 ) -> GenerateWorklog:
     """設定値から全アダプタを組み立てたユースケースを返す。
 
@@ -89,6 +93,7 @@ def build_use_case(
         ocr_keyframes_only=ocr_keyframes_only,
         vlm_gate=vlm_gate,
         speech_filter=speech_filter,
+        speaker_attribution=speaker_attribution,
     )
 
 
@@ -154,6 +159,14 @@ def main(argv: list[str] | None = None) -> int:
         help="VLM呼び出しの試行毎タイムアウト秒（タイムアウト時は1回リトライ、既定: 300）",
     )
     parser.add_argument(
+        "--no-speaker-attribution", action="store_true",
+        help="映像ベース話者特定を無効化する（meetingモード既定ON）",
+    )
+    parser.add_argument(
+        "--speaker-switch-tolerance", type=float, default=3.0,
+        help="話者ビュー切替と発話開始のズレ許容秒（既定: 3.0）",
+    )
+    parser.add_argument(
         "--asr-no-speech-prob", type=float, default=0.6,
         help="幻覚フィルタ: no_speech_probがこれを超えると除去候補（既定: 0.6）",
     )
@@ -198,6 +211,14 @@ def main(argv: list[str] | None = None) -> int:
             asr_backend=asr_backend,
             vlm_timeout_seconds=args.vlm_timeout,
             ocr_keyframes_only=(args.mode == "meeting"),
+            # 名前ラベル×シーン変化はmeeting録画の構造前提のためmeeting限定
+            speaker_attribution=(
+                SpeakerAttributionConfig(
+                    switch_tolerance_seconds=args.speaker_switch_tolerance
+                )
+                if args.mode == "meeting" and not args.no_speaker_attribution
+                else None
+            ),
             vlm_gate=(
                 VlmGateConfig(
                     jaccard_skip_threshold=args.vlm_skip_threshold,
