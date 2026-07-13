@@ -153,3 +153,68 @@ class TestFormatSpeechLine:
 
     def test_speaker_defaults_to_none(self) -> None:
         assert _segment(0.0, "はい").speaker is None  # S3後方互換
+
+
+class TestPipelineWiring:
+    """S4-S5（Issue #10）: パイプライン結線と表示。"""
+
+    def _run(self, speaker_attribution):
+        from pathlib import Path
+
+        from screen_activity_logger.application.use_cases import GenerateWorklog
+        from screen_activity_logger.domain.models import (
+            ActivityDescription,
+            Frame,
+            OcrText,
+        )
+        from screen_activity_logger.domain.services import TimelineMerger
+
+        frames = [
+            Frame(
+                timestamp=VideoTimestamp(seconds=5.0),
+                path=Path("/tmp/f1.png"),
+                is_keyframe=True,
+            ),
+        ]
+
+        class NameLabelRecognizer:
+            def recognize(self, frame):
+                return OcrText(
+                    timestamp=frame.timestamp, lines=("秋山隆利", "12:34")
+                )
+
+        class NullDescriber:
+            def describe(self, frame, ocr, speech=()):
+                return ActivityDescription(
+                    timestamp=frame.timestamp, action="会議中", app_guess=None
+                )
+
+        class FixedTranscriber:
+            def transcribe(self, video_path):
+                return [
+                    TranscriptSegment(
+                        start=VideoTimestamp(seconds=10.0),
+                        end=VideoTimestamp(seconds=12.0),
+                        text="私ですかね",
+                    )
+                ]
+
+        use_case = GenerateWorklog(
+            frame_extractor=type(
+                "E", (), {"extract": lambda self, p: frames}
+            )(),
+            text_recognizer=NameLabelRecognizer(),
+            scene_describer=NullDescriber(),
+            merger=TimelineMerger(ocr_match_tolerance_seconds=1.0),
+            speech_transcriber=FixedTranscriber(),
+            speaker_attribution=speaker_attribution,
+        )
+        return use_case.execute(Path("/tmp/v.mp4"))
+
+    def test_meeting_pipeline_attributes_and_formats(self) -> None:
+        worklog = self._run(SpeakerAttributionConfig())
+        assert worklog.entries[0].speech == ("秋山隆利: 私ですかね",)
+
+    def test_disabled_attribution_keeps_plain_speech(self) -> None:
+        worklog = self._run(None)
+        assert worklog.entries[0].speech == ("私ですかね",)

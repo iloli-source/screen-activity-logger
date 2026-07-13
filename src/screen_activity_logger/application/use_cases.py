@@ -22,6 +22,12 @@ from screen_activity_logger.domain.models import (
 )
 from screen_activity_logger.domain.screen_context import enrich_description
 from screen_activity_logger.domain.services import TimelineMerger
+from screen_activity_logger.domain.speaker_attribution import (
+    SpeakerAttributionConfig,
+    SpeakerObservation,
+    attribute_speakers,
+    extract_name_labels,
+)
 from screen_activity_logger.domain.speech_filter import (
     SpeechFilterConfig,
     filter_segments,
@@ -59,6 +65,7 @@ class GenerateWorklog:
     ocr_keyframes_only: bool = False
     vlm_gate: VlmGateConfig | None = None
     speech_filter: SpeechFilterConfig | None = None
+    speaker_attribution: SpeakerAttributionConfig | None = None
 
     def execute(
         self,
@@ -76,6 +83,12 @@ class GenerateWorklog:
         if self.speech_filter is not None:
             segments = filter_segments(segments, self.speech_filter)
         ocr_by_frame = self._recognize_frames(frames)
+        if self.speaker_attribution is not None:
+            segments = attribute_speakers(
+                segments,
+                self._speaker_observations(frames, ocr_by_frame),
+                self.speaker_attribution,
+            )
         descriptions = [
             enrich_description(
                 self.scene_describer.describe(
@@ -92,6 +105,30 @@ class GenerateWorklog:
             ocr_texts=ocr_by_frame.values(),
             transcript_segments=segments,
         )
+
+    @staticmethod
+    def _speaker_observations(
+        frames: Sequence[Frame], ocr_by_frame: dict
+    ) -> tuple[SpeakerObservation, ...]:
+        """keyframeのOCRから話者観測列を構築する（Issue #10）。
+
+        シーン変化＝keyframeが話者ビュー切替の信号。名前ラベル抽出は
+        domainの純粋関数に委譲する。
+        """
+        observations = []
+        for frame in frames:
+            if not frame.is_keyframe:
+                continue
+            ocr = ocr_by_frame[frame.timestamp]
+            lines = ocr.normalized_lines()
+            observations.append(
+                SpeakerObservation(
+                    timestamp=frame.timestamp,
+                    names=extract_name_labels(lines),
+                    ocr_line_count=len(lines),
+                )
+            )
+        return tuple(observations)
 
     def _frames_to_describe(
         self, frames: Sequence[Frame], ocr_by_frame: dict
