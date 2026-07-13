@@ -128,6 +128,20 @@ ln -s "$(pwd)/skills/screen-activity-logger" ~/.claude/skills/screen-activity-lo
 
 以降、Claude Code で「この録画を作業ログにして」と頼むと前提チェック〜実行〜結果要約まで行う。
 
+
+### VLMテレメトリの読み方（Issue #15）
+
+実行ログに全VLM呼び出しの所要時間が出る:
+
+```
+VLM推論 t=00:00:12 attempt=1 8.2s            ← 正常
+VLM推論 t=00:01:46 attempt=2 121.9s SLOW     ← タイムアウト後のリトライで救済
+VLM呼び出し失敗 t=... attempt=2/2 300.0s: ReadTimeout  ← 2回失敗＝フォールバック
+```
+
+- `SLOW`（60秒超）が続く場合はマシンが熱制限・メモリスラッシング状態。他の重い処理を止めるか `--vlm-timeout 450` で延長
+- `attempt=2` が速く成功する＝一時的ハング（リトライが救済）／`attempt=2` も遅い＝持続的低速（リトライでは救えない）
+
 ### Windowsでのセットアップ
 
 ```powershell
