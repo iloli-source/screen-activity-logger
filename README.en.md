@@ -9,7 +9,7 @@ Turn screen recordings (MP4) into **structured, timestamped work logs — fully 
 ## Example output
 
 ```markdown
-## 00:05:12 — Excel — quote_2026Q2.xlsx (Sheet1)   ← app / file / position (OCR facts + VLM)
+## 00:05:12〜00:12:30 (7m18s) — Excel — quote_2026Q2.xlsx (Sheet1)   ← heading with dwell time
 👁 Checking the unit-price totals in column D       ← focus (VLM inference)
 🗣️ "This unit price changed from last month"        ← speech (kotoba-whisper)
 Editing a unit-price cell                            ← action (Qwen3-VL)
@@ -59,6 +59,15 @@ uv run python -m screen_activity_logger.cli recording.mp4 -o out/
 
 ASR uses faster-whisper (CTranslate2) with automatic CUDA detection; CPU int8 works with zero extra setup. For NVIDIA GPUs add `pip install nvidia-cublas-cu12 nvidia-cudnn-cu12`.
 
+
+## Use from Claude Code (skill)
+
+```bash
+ln -s "$(pwd)/skills/screen-activity-logger" ~/.claude/skills/screen-activity-logger
+```
+
+Then ask Claude Code: "turn this recording into a work log" — it handles prerequisite checks, mode selection, execution, and result summaries.
+
 ## Modes
 
 | | screencast (default) | meeting |
@@ -80,7 +89,7 @@ Batch multiple videos in one command (two-phase: all ASR first, then per-video O
 --asr-backend auto|mlx|faster ASR backend (auto: Apple Silicon→mlx, else→faster)
 --no-asr                      disable speech recognition
 --ocr-tier tiny|small|medium  OCR model size (default: small)
---vlm-timeout 300             per-attempt VLM timeout seconds (1 retry on timeout)
+--vlm-timeout 300             per-attempt VLM timeout seconds (auto-retry once on timeout, with per-call telemetry)
 --vlm-skip-threshold 0.85     VLM gate Jaccard threshold (meeting mode)
 --no-asr-filter               disable the ASR hallucination filter (debug)
 ```

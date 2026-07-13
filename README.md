@@ -9,11 +9,14 @@ PC画面を録画した動画（MP4）を入力に、**完全ローカル**で *
 ## 出力例
 
 ```markdown
-## 00:05:12 — Excel — 見積書_2026Q2.xlsx（Sheet1）   ← アプリ・ファイル・位置（OCR事実＋VLM）
+## 00:05:12〜00:12:30（7分18秒） — Excel — 見積書_2026Q2.xlsx（Sheet1）   ← 滞留時間つき見出し
 👁 D列の単価合計を確認しながら                        ← 注視箇所（VLM推測）
 🗣️ この単価、先月と変わってますね                     ← 発話（kotoba-whisper）
 単価セルを修正している                                ← 動作理解（Qwen3-VL）
 - `見積書_2026Q2.xlsx - Excel`                       ← 一次情報（生OCR、常に保持）
+
+## アプリ別滞在時間                                    ← 動画末尾に自動集計（稼働報告の下資料）
+| Excel | 32分10秒 |
 ```
 
 ## なぜ作るか
@@ -30,8 +33,8 @@ PC画面を録画した動画（MP4）を入力に、**完全ローカル**で *
 |----|------|------|
 | **フレーム抽出** | ffmpeg（fps均等サンプリング＋シーン変化検出、長辺1024px縮小） | 視覚トークン超過の実測に基づく |
 | **OCR層** | PaddleOCR PP-OCRv6 tiny/small/medium（日本語、CPU） | 画面差分によるスキップ＋会議モードでキーフレーム限定 |
-| **VLM層** | Qwen3-VL:8B（Ollama、タイムアウト＋フォールバック付き） | 構造化5フィールド出力（app/resource/location/focus/action） |
-| **ASR層** | kotoba-whisper v2.0（Mac: MLX / Windows・Linux: faster-whisper、自動選択） | 日本語特化。音声トラックなしは自動スキップ |
+| **VLM層** | Qwen3-VL:8B（Ollama、タイムアウト＋1回リトライ＋推論テレメトリ） | 構造化5フィールド出力・幻覚resource品質ゲート（#15/#17） |
+| **ASR層** | kotoba-whisper v2.0（Mac: MLX / Windows・Linux: faster-whisper、自動選択） | 日本語特化・無音幻覚フィルタ（#14）。音声なしは自動スキップ |
 | **VLMゲート** | OCRトークンJaccard（meetingモード） | 話者切替のVLM無駄撃ちを抑制（3者設計協議で採択、Issue #13） |
 | **出力** | JSONL（機械用・一次情報保持）＋Markdown（人間用） | |
 | **活用層（将来）** | Ruri v3 + Faiss / Qwen3-VL-Embedding | 意味検索・分類・RAG（Issue #5） |
@@ -84,6 +87,10 @@ ollama pull qwen3-vl:8b
 #   --vlm-skip-threshold 0.85 VLMゲートのJaccard閾値（meeting時）
 #   --vlm-min-gap 10          VLM呼び出しの最小間隔秒（debounce）
 #   --vlm-max-gap 120         VLM強制実行の最大間隔秒（安全弁）
+#   --vlm-timeout 300         VLM試行毎タイムアウト秒（タイムアウト時は自動で1回リトライ）
+#   --asr-no-speech-prob 0.6  ASR幻覚フィルタ閾値（no_speech_prob）
+#   --asr-avg-logprob -1.0    ASR幻覚フィルタ閾値（avg_logprob）
+#   --no-asr-filter           ASR幻覚フィルタを無効化（デバッグ用）
 ```
 
 ### モードの使い分け
@@ -112,6 +119,7 @@ export OLLAMA_KV_CACHE_TYPE=q8_0  # KVメモリ約半減（品質はq8が無難�
 実測性能（M4 Air）:
 - 画面録画20秒: 約69秒（差分OCRスキップ＋small tier。改善前278秒。ASR追加コストほぼゼロ）
 - 実会議5分クリップ×10本バッチ: 10/10完走（10並列×各自ロードは0/10で破綻＝バッチ2フェーズが必須）
+- VLMタイムアウトのリトライ救済: 劣化環境の実測でタイムアウト4回中3回を救済、説明消失が5件→1件（Issue #15）
 
 ```bash
 # テスト
@@ -168,10 +176,9 @@ uv run python -m screen_activity_logger.cli 録画.mp4 -o out/
 ## 開発状況（Issue駆動）
 
 進行状況は [GitHub Issues](https://github.com/iloli-source/screen-activity-logger/issues) が正。
-- ✅ 完了: 最小パイプライン(#1)、ASR層(#6)、バッチ2フェーズ＋会議モード(#7)、構造化コンテキスト抽出(#12)
-- 🔄 進行中: VLMゲート実測検証(#13)
-- 📥 キュー: スクショ付き手順書・滞留時間・実時刻復元(#11)、映像ベース話者特定(#10)
-- 🎯 意思決定: ポジショニング・配布戦略(#9)
+- ✅ 完了: 最小パイプライン(#1)、ASR層(#6)、バッチ2フェーズ＋会議モード(#7)、戦略決定・Apache-2.0でOSS化(#9)、資産カタログ(#11)、構造化コンテキスト抽出(#12)、VLMゲート(#13)、ASR幻覚フィルタ＋ウォームアップ(#14)、VLMリトライ＋テレメトリ(#15)、Windows対応(#16)、resource浄化(#17)、滞留時間トラッキング(#18)
+- 🔄 進行中: OSS公開準備(#19)、活用層・意味検索(#5)
+- 📥 キュー: 高速化検証(#8)、VRAM実測・間引きチューニング(#2)、OCR比較(#4)、日本語品質改善(#3)、映像ベース話者特定(#10)
 
 設計原則（Issue #9）: **コア3軸（正確・速い・安全）を強化するものだけ採用**／タダの付加価値（計算済みデータの再利用）を先に取り尽くす／高価な付加価値はモード化。
 
