@@ -16,33 +16,45 @@ from screen_activity_logger.infrastructure.mlx_whisper_transcriber import (
     DEFAULT_ASR_MODEL,
     MlxWhisperTranscriber,
 )
+from screen_activity_logger.infrastructure.whisper_cpp_transcriber import (
+    DEFAULT_CPP_ASR_MODEL_PATH,
+    WhisperCppTranscriber,
+)
 
 
 class TestResolveBackend:
     @pytest.mark.parametrize(
-        ("system", "machine", "expected"),
+        ("system", "machine", "cpp_available", "expected"),
         [
-            ("Darwin", "arm64", "mlx"),      # Apple Silicon
-            ("Darwin", "x86_64", "faster"),  # Intel Mac（MLX不可）
-            ("Windows", "AMD64", "faster"),
-            ("Linux", "x86_64", "faster"),
+            # Apple Silicon: whisper.cpp利用可ならcpp（Issue #22。
+            # mlxは長時間入力で品質崩壊のためautoから除外）
+            ("Darwin", "arm64", True, "cpp"),
+            ("Darwin", "arm64", False, "faster"),  # 未導入時は遅いが正しいfaster
+            ("Darwin", "x86_64", True, "faster"),  # Intel Mac（Metal MLX前提なし）
+            ("Windows", "AMD64", True, "faster"),
+            ("Linux", "x86_64", True, "faster"),
         ],
     )
     def test_auto_resolves_by_platform(
-        self, system: str, machine: str, expected: str
+        self, system: str, machine: str, cpp_available: bool, expected: str
     ) -> None:
-        assert resolve_backend("auto", system=system, machine=machine) == expected
+        resolved = resolve_backend(
+            "auto", system=system, machine=machine, cpp_available=cpp_available
+        )
+        assert resolved == expected
 
     def test_explicit_backend_passes_through(self) -> None:
         # 明示指定はプラットフォームに関係なくそのまま（MacでfasterのWz検証用）
         assert resolve_backend("faster", system="Darwin", machine="arm64") == "faster"
         assert resolve_backend("mlx", system="Windows", machine="AMD64") == "mlx"
+        assert resolve_backend("cpp", system="Linux", machine="x86_64") == "cpp"
 
 
 class TestDefaultModelFor:
     def test_backend_specific_defaults(self) -> None:
         assert default_model_for("mlx") == DEFAULT_ASR_MODEL
         assert default_model_for("faster") == DEFAULT_FASTER_ASR_MODEL
+        assert default_model_for("cpp") == str(DEFAULT_CPP_ASR_MODEL_PATH)
 
     def test_unknown_backend_raises(self) -> None:
         with pytest.raises(ValueError):
@@ -64,6 +76,33 @@ class TestEnsureBackendAvailable:
         assert "asr-faster" in message  # 導入コマンドの提示
         assert "--no-asr" in message   # 回避手段の提示
 
+    def test_cpp_passes_when_binary_and_model_exist(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        model = tmp_path / "model.bin"
+        model.write_bytes(b"fake")
+        monkeypatch.setattr("shutil.which", lambda name: "/opt/homebrew/bin/x")
+        ensure_backend_available("cpp", cpp_model_path=model)  # 例外が出ないこと
+
+    def test_cpp_missing_binary_raises_with_brew_hint(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        monkeypatch.setattr("shutil.which", lambda name: None)
+        with pytest.raises(ValueError) as excinfo:
+            ensure_backend_available("cpp", cpp_model_path=tmp_path / "m.bin")
+        message = str(excinfo.value)
+        assert "brew install whisper-cpp" in message
+        assert "--no-asr" in message
+
+    def test_cpp_missing_model_raises_with_path(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        monkeypatch.setattr("shutil.which", lambda name: "/opt/homebrew/bin/x")
+        missing = tmp_path / "missing.bin"
+        with pytest.raises(ValueError) as excinfo:
+            ensure_backend_available("cpp", cpp_model_path=missing)
+        assert str(missing) in str(excinfo.value)
+
 
 class TestCreateTranscriber:
     def test_creates_mlx_transcriber(self) -> None:
@@ -73,6 +112,10 @@ class TestCreateTranscriber:
     def test_creates_faster_transcriber(self) -> None:
         transcriber = create_transcriber("faster", "some/model")
         assert isinstance(transcriber, FasterWhisperTranscriber)
+
+    def test_creates_cpp_transcriber(self, tmp_path) -> None:
+        transcriber = create_transcriber("cpp", str(tmp_path / "model.bin"))
+        assert isinstance(transcriber, WhisperCppTranscriber)
 
     def test_unknown_backend_raises(self) -> None:
         with pytest.raises(ValueError):

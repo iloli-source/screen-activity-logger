@@ -1,15 +1,21 @@
-"""ASRバックエンドの解決とアダプタ生成（プラットフォーム対応、Issue #16）。
+"""ASRバックエンドの解決とアダプタ生成（プラットフォーム対応、Issue #16/#22）。
 
 cli.pyはカバレッジ除外のため、選択ロジックはここに置いてテスト対象にする。
 アダプタ本体は遅延importのため、create_transcriberはバックエンド
 ライブラリをimportしない。可用性チェックはensure_backend_availableに分離し、
 CLIのmain()冒頭でのみ呼ぶ（重い処理が走る前に親切なエラーで止める）。
+
+Issue #22（2時間実測）: mlx-whisperは長時間入力で内容崩壊＋40倍超の減速を
+起こすためautoから除外。Apple Siliconの本線はwhisper.cpp（Metal、
+品質×速度両立）、未導入時はfaster-whisper（遅いが正しい）に落とす。
 """
 
 from __future__ import annotations
 
 import importlib.util
 import platform
+import shutil
+from pathlib import Path
 
 from screen_activity_logger.application.ports import SpeechTranscriber
 from screen_activity_logger.infrastructure.faster_whisper_transcriber import (
@@ -20,12 +26,18 @@ from screen_activity_logger.infrastructure.mlx_whisper_transcriber import (
     DEFAULT_ASR_MODEL,
     MlxWhisperTranscriber,
 )
+from screen_activity_logger.infrastructure.whisper_cpp_transcriber import (
+    DEFAULT_CPP_ASR_MODEL_PATH,
+    DEFAULT_CPP_BINARY,
+    WhisperCppTranscriber,
+)
 
-ASR_BACKENDS = ("auto", "mlx", "faster")
+ASR_BACKENDS = ("auto", "cpp", "faster", "mlx")
 
 _DEFAULT_MODELS = {
     "mlx": DEFAULT_ASR_MODEL,
     "faster": DEFAULT_FASTER_ASR_MODEL,
+    "cpp": str(DEFAULT_CPP_ASR_MODEL_PATH),
 }
 
 _BACKEND_MODULES = {"mlx": "mlx_whisper", "faster": "faster_whisper"}
@@ -36,18 +48,35 @@ _INSTALL_HINTS = {
 }
 
 
+def is_cpp_available(model_path: Path | None = None) -> bool:
+    """whisper.cppが使えるか（バイナリ＋モデルファイルの両方）。"""
+    resolved_model = DEFAULT_CPP_ASR_MODEL_PATH if model_path is None else model_path
+    return (
+        shutil.which(DEFAULT_CPP_BINARY) is not None
+        and Path(resolved_model).exists()
+    )
+
+
 def resolve_backend(
     backend: str,
     system: str | None = None,
     machine: str | None = None,
+    cpp_available: bool | None = None,
 ) -> str:
-    """auto → Darwin+arm64ならmlx、それ以外はfaster。明示指定はそのまま。"""
+    """auto → Apple Siliconはcpp（利用可能時）/faster、それ以外はfaster。
+
+    明示指定はそのまま。mlxは長時間入力で品質崩壊（Issue #22）のため
+    autoの解決先から除外し、明示オプトインのみとする。
+    """
     if backend != "auto":
         return backend
     resolved_system = platform.system() if system is None else system
     resolved_machine = platform.machine() if machine is None else machine
     if resolved_system == "Darwin" and resolved_machine == "arm64":
-        return "mlx"
+        resolved_cpp = (
+            is_cpp_available() if cpp_available is None else cpp_available
+        )
+        return "cpp" if resolved_cpp else "faster"
     return "faster"
 
 
@@ -58,8 +87,13 @@ def default_model_for(backend: str) -> str:
     return _DEFAULT_MODELS[backend]
 
 
-def ensure_backend_available(backend: str) -> None:
-    """バックエンドライブラリの導入チェック。未導入なら導入コマンド付きで失敗。"""
+def ensure_backend_available(
+    backend: str, cpp_model_path: Path | None = None
+) -> None:
+    """バックエンドの導入チェック。未導入なら導入コマンド付きで失敗。"""
+    if backend == "cpp":
+        _ensure_cpp_available(cpp_model_path)
+        return
     module_name = _BACKEND_MODULES.get(backend)
     if module_name is None:
         raise ValueError(f"未知のASRバックエンド: {backend}")
@@ -71,10 +105,28 @@ def ensure_backend_available(backend: str) -> None:
         )
 
 
+def _ensure_cpp_available(model_path: Path | None) -> None:
+    resolved_model = DEFAULT_CPP_ASR_MODEL_PATH if model_path is None else model_path
+    if shutil.which(DEFAULT_CPP_BINARY) is None:
+        raise ValueError(
+            f"whisper.cppバイナリ（{DEFAULT_CPP_BINARY}）が見つかりません。"
+            " brew install whisper-cpp で導入するか、"
+            "--asr-backend faster か --no-asr を指定してください"
+        )
+    if not Path(resolved_model).exists():
+        raise ValueError(
+            f"whisper.cpp用モデルがありません: {resolved_model}。"
+            " README「ASRセットアップ」の手順でGGUFモデルを配置するか、"
+            "--asr-model <パス> で指定してください（回避: --asr-backend faster）"
+        )
+
+
 def create_transcriber(backend: str, model: str) -> SpeechTranscriber:
     """解決済みバックエンドからアダプタを生成する（import自体は遅延のまま）。"""
     if backend == "mlx":
         return MlxWhisperTranscriber(model=model)
     if backend == "faster":
         return FasterWhisperTranscriber(model=model)
+    if backend == "cpp":
+        return WhisperCppTranscriber(model_path=model)
     raise ValueError(f"未知のASRバックエンド: {backend}")

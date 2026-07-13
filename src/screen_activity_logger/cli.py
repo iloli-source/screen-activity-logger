@@ -136,8 +136,10 @@ def main(argv: list[str] | None = None) -> int:
         help="OCRスキップの画面差分閾値（0.0〜1.0、既定: 0.02）",
     )
     parser.add_argument(
-        "--asr-backend", choices=["auto", "mlx", "faster"], default="auto",
-        help="ASRバックエンド（auto: Apple Silicon→mlx / それ以外→faster、既定: auto）",
+        "--asr-backend", choices=["auto", "cpp", "faster", "mlx"], default="auto",
+        help="ASRバックエンド（auto: Apple Silicon→cpp(whisper.cpp、なければfaster) / "
+        "それ以外→faster。mlxは長時間入力で品質崩壊するため非推奨・明示指定のみ、"
+        "Issue #22）",
     )
     parser.add_argument(
         "--asr-model", default=None,
