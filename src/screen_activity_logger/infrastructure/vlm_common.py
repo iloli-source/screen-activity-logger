@@ -67,7 +67,11 @@ def parse_fields(content: str) -> dict[str, str | None]:
     fields: dict[str, str | None] = {
         key: normalize_json_value(payload.get(key)) for key in empty
     }
-    fields["action"] = str(payload.get("action", "")).strip() or FALLBACK_ACTION
+    # actionも空値表現（null/"null"/"none"）を正規化する（Issue #3の実バグ:
+    # 文字列"null"が素通りしてMarkdownに「null」と表示されていた）
+    fields["action"] = (
+        normalize_json_value(payload.get("action")) or FALLBACK_ACTION
+    )
     return fields
 
 
