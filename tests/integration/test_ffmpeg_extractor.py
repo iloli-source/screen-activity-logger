@@ -117,3 +117,22 @@ class TestFrameDownscaling:
         frames = extractor.extract(scene_change_video)
         # 元動画は320x240なので拡大されないこと
         assert Image.open(frames[0].path).size[0] == 320
+
+
+class TestStaleFrameCleanup:
+    """4AIレビューR1: バッチで前動画のフレーム残渣が次動画を汚染するバグの回帰。"""
+
+    def test_previous_extraction_residue_is_removed(
+        self, scene_change_video: Path, tmp_path: Path
+    ) -> None:
+        stale = tmp_path / "frame_000099.png"
+        stale.write_bytes(b"stale-from-previous-video")
+        extractor = FfmpegFrameExtractor(
+            fps=1.0, scene_threshold=0.1, workdir=tmp_path
+        )
+
+        frames = extractor.extract(scene_change_video)
+
+        assert not stale.exists()
+        assert all(f.path.read_bytes() != b"stale-from-previous-video" for f in frames)
+        assert 5 <= len(frames) <= 7  # 残渣が数に混入しない

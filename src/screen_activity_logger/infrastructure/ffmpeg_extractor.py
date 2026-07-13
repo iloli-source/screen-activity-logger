@@ -65,6 +65,10 @@ class FfmpegFrameExtractor:
 
     def _sample_uniform_frames(self, video_path: Path) -> tuple[Path, ...]:
         self.workdir.mkdir(parents=True, exist_ok=True)
+        # バッチ処理はworkdirを全動画で共有するため、前動画の残渣PNGを
+        # globで拾って汚染しないよう抽出前に必ず掃除する（4AIレビューR1）
+        for stale in self.workdir.glob("frame_*.png"):
+            stale.unlink()
         pattern = self.workdir / "frame_%06d.png"
         # scale: 長辺がmax_long_edgeを超える場合のみ縮小（拡大はしない）。-2は偶数丸め
         scale = f"scale='min({self.max_long_edge},iw)':-2"

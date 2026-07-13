@@ -119,6 +119,6 @@ class TestPipelineEndToEnd:
             jsonl_path.read_text(encoding="utf-8").splitlines()[0]
         )
         assert set(first.keys()) == {
-            "t", "app_guess", "resource", "location", "focus",
-            "ocr", "speech", "action",
+            "t", "t_end", "duration_seconds", "app_guess", "resource",
+            "location", "focus", "ocr", "speech", "summary", "action",
         }
