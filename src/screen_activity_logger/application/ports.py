@@ -15,6 +15,7 @@ from screen_activity_logger.domain.models import (
     TranscriptSegment,
     Worklog,
 )
+from screen_activity_logger.domain.search import SearchDocument, SearchHit
 
 
 class FrameExtractor(Protocol):
@@ -56,3 +57,35 @@ class WorklogWriter(Protocol):
     """Worklogを永続化する（JSONL/Markdown等）。"""
 
     def write(self, worklog: Worklog, output_path: Path) -> None: ...
+
+
+class TextEmbedder(Protocol):
+    """テキストをベクトル化する（検索層、Issue #5）。
+
+    クエリ/文書のプレフィックス規約はアダプタの責務（Ruri固有仕様）。
+    """
+
+    def embed_documents(
+        self, texts: Sequence[str]
+    ) -> tuple[tuple[float, ...], ...]: ...
+
+    def embed_query(self, text: str) -> tuple[float, ...]: ...
+
+
+class VectorSearchIndex(Protocol):
+    """ベクトル索引の構築・永続化・検索（検索層、Issue #5）。"""
+
+    def build(
+        self,
+        documents: Sequence[SearchDocument],
+        vectors: Sequence[Sequence[float]],
+        model_name: str,
+    ) -> None: ...
+
+    def save(self, index_dir: Path) -> None: ...
+
+    def load(self, index_dir: Path) -> None: ...
+
+    def search(
+        self, query_vector: Sequence[float], k: int
+    ) -> tuple[SearchHit, ...]: ...
