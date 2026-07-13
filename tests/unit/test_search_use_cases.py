@@ -136,3 +136,36 @@ class TestSearchWorklogs:
         assert index.loaded_dir == tmp_path
         assert len(hits) == 2
         assert hits[0].document.doc_id == "v:0"  # |3-4|=1 が最も近い
+
+
+class TestSearchCliBuilders:
+    """P7（Issue #5）: sal-searchのDI組み立て検証。"""
+
+    def test_index_use_case_wiring(self) -> None:
+        from screen_activity_logger.infrastructure.numpy_index import (
+            NumpyVectorIndex,
+        )
+        from screen_activity_logger.infrastructure.ruri_embedder import (
+            RuriEmbedder,
+        )
+        from screen_activity_logger.search_cli import build_index_use_case
+
+        use_case = build_index_use_case(model="cl-nagoya/ruri-v3-130m")
+        assert isinstance(use_case.embedder, RuriEmbedder)
+        assert use_case.embedder.model_name == "cl-nagoya/ruri-v3-130m"
+        assert isinstance(use_case.index, NumpyVectorIndex)
+        assert use_case.model_name == "cl-nagoya/ruri-v3-130m"
+
+    def test_format_hit_shows_range_and_action(self) -> None:
+        from screen_activity_logger.search_cli import format_hit
+
+        doc = SearchDocument(
+            doc_id="02:1", text="", source="02", t="00:01:46",
+            t_end="00:03:21", duration_seconds=95.0,
+            app_guess="Excel", action="SUM関数で集計している",
+        )
+        line = format_hit(1, SearchHit(document=doc, score=0.724))
+        assert "[0.724]" in line
+        assert "00:01:46〜00:03:21" in line
+        assert "Excel" in line
+        assert "SUM関数で集計している" in line

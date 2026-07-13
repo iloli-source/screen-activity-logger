@@ -27,9 +27,16 @@ asr = [
     "mlx-whisper>=0.4; sys_platform == 'darwin' and platform_machine == 'arm64'",
     "faster-whisper>=1.1; sys_platform != 'darwin' or platform_machine != 'arm64'",
 ]
+search = [
+    # 活用層: 意味検索（Issue #5）。Ruri v3はCPUで動く軽量埋め込み
+    "sentence-transformers>=3.4",
+    "transformers>=4.48",  # Ruri v3（ModernBERT）の下限
+    "numpy>=1.26",
+]
 
 [project.scripts]
 screen-activity-logger = "screen_activity_logger.cli:main"
+sal-search = "screen_activity_logger.search_cli:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -49,4 +56,7 @@ markers = [
 
 [tool.coverage.run]
 source = ["src/screen_activity_logger"]
-omit = ["src/screen_activity_logger/cli.py"]
+omit = [
+    "src/screen_activity_logger/cli.py",
+    "src/screen_activity_logger/search_cli.py",
+]
