@@ -84,6 +84,7 @@ class TranscriptSegment:
     text: str
     no_speech_prob: float | None = None
     avg_logprob: float | None = None
+    speaker: str | None = None  # 映像ベース話者特定（Issue #10）
 
     def __post_init__(self) -> None:
         if self.end < self.start:
