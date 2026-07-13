@@ -60,6 +60,7 @@ class JsonlWorklogWriter:
             "focus": entry.focus,
             "ocr": list(entry.ocr_lines),
             "speech": list(entry.speech),
+            "summary": entry.summary,
             "action": entry.action,
         }
         return json.dumps(payload, ensure_ascii=False)
@@ -107,6 +108,9 @@ class MarkdownWorklogWriter:
             ):
                 heading += f"（{entry.location}）"
         body = [heading, ""]
+        if entry.summary:
+            body.append(f"🧭 {entry.summary}")
+            body.append("")
         if entry.speech:
             body.extend(f"🗣️ {line}" for line in entry.speech)
             body.append("")

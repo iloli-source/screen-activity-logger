@@ -211,3 +211,61 @@ class TestAppSummaryTable:
         out = tmp_path / "worklog.md"
         MarkdownWorklogWriter().write(_worklog(), out)  # end無しエントリのみ
         assert "アプリ別滞在時間" not in out.read_text(encoding="utf-8")
+
+
+class TestSummaryOutput:
+    def _entry_with_summary(self):
+        from screen_activity_logger.domain.models import (
+            VideoTimestamp,
+            WorklogEntry,
+        )
+
+        return WorklogEntry(
+            timestamp=VideoTimestamp(seconds=10.0),
+            action="打ち合わせ中",
+            app_guess="Chrome",
+            ocr_lines=(),
+            speech=("進捗ですが", "8割です", "来週完了予定"),
+            summary="案件の進捗を報告している",
+        )
+
+    def test_jsonl_includes_summary(self, tmp_path) -> None:
+        import json
+
+        from screen_activity_logger.domain.models import Worklog
+
+        path = tmp_path / "w.jsonl"
+        JsonlWorklogWriter().write(
+            Worklog.from_entries([self._entry_with_summary()]), path
+        )
+
+        payload = json.loads(path.read_text(encoding="utf-8").strip())
+        assert payload["summary"] == "案件の進捗を報告している"
+
+    def test_markdown_shows_summary_before_speech(self, tmp_path) -> None:
+        from screen_activity_logger.domain.models import Worklog
+
+        path = tmp_path / "w.md"
+        MarkdownWorklogWriter().write(
+            Worklog.from_entries([self._entry_with_summary()]), path
+        )
+
+        text = path.read_text(encoding="utf-8")
+        assert "🧭 案件の進捗を報告している" in text
+        assert text.index("🧭") < text.index("🗣️")
+
+    def test_no_summary_keeps_output_clean(self, tmp_path) -> None:
+        import json
+        from dataclasses import replace
+
+        from screen_activity_logger.domain.models import Worklog
+
+        entry = replace(self._entry_with_summary(), summary=None)
+        md_path = tmp_path / "w.md"
+        jsonl_path = tmp_path / "w.jsonl"
+        MarkdownWorklogWriter().write(Worklog.from_entries([entry]), md_path)
+        JsonlWorklogWriter().write(Worklog.from_entries([entry]), jsonl_path)
+
+        assert "🧭" not in md_path.read_text(encoding="utf-8")
+        payload = json.loads(jsonl_path.read_text(encoding="utf-8").strip())
+        assert payload["summary"] is None
