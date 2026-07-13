@@ -49,9 +49,19 @@ def create_describer(
 
 
 def ensure_backend_available(backend: str, base_url: str = DEFAULT_VLLM_URL) -> None:
-    """vllm-mlxサーバーの到達性チェック（重い処理の前に親切なエラーで止める）。"""
-    if backend != "vllm-mlx":
-        return  # ollamaは従来どおりチェックなし（describe時のフォールバックに委ねる）
+    """VLMサーバーの到達性チェック（重い処理の前に親切なエラーで止める）。"""
+    if backend == "ollama":
+        # 重いOCRの後で初めて未起動に気づかないよう起動前に確認（4AIレビューR1）
+        import ollama
+
+        try:
+            ollama.list()
+        except Exception as error:  # noqa: BLE001
+            raise ValueError(
+                f"Ollamaサーバーに接続できません: {type(error).__name__}。"
+                " ollama serve を起動するか、--vlm-backend vllm-mlx を検討してください"
+            ) from error
+        return
     import httpx
 
     try:

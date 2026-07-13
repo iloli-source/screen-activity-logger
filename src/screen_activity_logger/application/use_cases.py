@@ -19,6 +19,7 @@ from screen_activity_logger.domain.models import (
     Frame,
     OcrText,
     TranscriptSegment,
+    VideoTimestamp,
     Worklog,
 )
 from screen_activity_logger.domain.screen_context import enrich_description
@@ -141,7 +142,8 @@ class GenerateWorklog:
 
     @staticmethod
     def _speaker_observations(
-        frames: Sequence[Frame], ocr_by_frame: dict
+        frames: Sequence[Frame],
+        ocr_by_frame: dict[VideoTimestamp, OcrText],
     ) -> tuple[SpeakerObservation, ...]:
         """keyframeのOCRから話者観測列を構築する（Issue #10）。
 
@@ -214,12 +216,16 @@ class GenerateWorklog:
             if seg.start.seconds <= window_end and seg.end.seconds >= window_start
         )
 
-    def _recognize_frames(self, frames: Sequence[Frame]) -> dict:
+    def _recognize_frames(
+        self, frames: Sequence[Frame]
+    ) -> dict[VideoTimestamp, OcrText]:
         if self.ocr_keyframes_only:
             return self._recognize_keyframes_only(frames)
         return self._recognize_with_skip(frames)
 
-    def _recognize_keyframes_only(self, frames: Sequence[Frame]) -> dict:
+    def _recognize_keyframes_only(
+        self, frames: Sequence[Frame]
+    ) -> dict[VideoTimestamp, OcrText]:
         return {
             frame.timestamp: (
                 self.text_recognizer.recognize(frame)
@@ -229,7 +235,9 @@ class GenerateWorklog:
             for frame in frames
         }
 
-    def _recognize_with_skip(self, frames: Sequence[Frame]) -> dict:
+    def _recognize_with_skip(
+        self, frames: Sequence[Frame]
+    ) -> dict[VideoTimestamp, OcrText]:
         ocr_by_frame = {}
         last_recognized: Frame | None = None
         last_lines: tuple[str, ...] = ()

@@ -53,11 +53,16 @@ class TestOllamaChatSummarizer:
 
         calls: list[dict] = []
 
-        def fake_chat(model, messages, options=None):
-            calls.append({"model": model, "messages": messages})
-            return {"message": {"content": "要旨文"}}
+        class FakeClient:
+            def __init__(self, timeout=None):
+                calls_meta.append(timeout)
 
-        fake_module = types.SimpleNamespace(chat=fake_chat)
+            def chat(self, model, messages, options=None):
+                calls.append({"model": model, "messages": messages})
+                return {"message": {"content": "要旨文"}}
+
+        calls_meta: list = []
+        fake_module = types.SimpleNamespace(Client=FakeClient)
         monkeypatch.setitem(sys.modules, "ollama", fake_module)
 
         result = OllamaChatSummarizer(model="qwen3-vl:8b").summarize(
@@ -68,3 +73,4 @@ class TestOllamaChatSummarizer:
         assert call["model"] == "qwen3-vl:8b"
         assert SUMMARY_PROMPT in call["messages"][0]["content"]
         assert result == "要旨文"
+        assert calls_meta == [60.0]  # 無限待ち防止のtimeout（4AIレビューR1）

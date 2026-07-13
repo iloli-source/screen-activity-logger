@@ -63,13 +63,21 @@ class OpenAIChatSummarizer:
 class OllamaChatSummarizer:
     """Ollamaのchat APIで発話要旨を生成する（VLMと同一モデルにテキストのみ入力）。"""
 
-    def __init__(self, model: str) -> None:
+    def __init__(
+        self,
+        model: str,
+        timeout_seconds: float = DEFAULT_SUMMARY_TIMEOUT_SECONDS,
+    ) -> None:
         self._model = model
+        self._timeout_seconds = timeout_seconds
 
     def summarize(self, lines: tuple[str, ...]) -> str | None:
         import ollama  # 遅延import（既存流儀）
 
-        response = ollama.chat(
+        # 無限待ちで--speech-summaryがバッチを止めないようclientにtimeout
+        # を設定する（OpenAI側と対称、4AIレビューR1）
+        client = ollama.Client(timeout=self._timeout_seconds)
+        response = client.chat(
             model=self._model,
             messages=[{"role": "user", "content": build_summary_prompt(lines)}],
             options={"temperature": 0, "num_predict": _MAX_TOKENS},

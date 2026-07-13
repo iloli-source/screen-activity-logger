@@ -10,6 +10,7 @@ from screen_activity_logger.application.use_cases import (
     BatchGenerateWorklog,
     GenerateWorklog,
 )
+from screen_activity_logger.domain.models import TranscriptSegment
 from screen_activity_logger.domain.services import TimelineMerger
 from screen_activity_logger.domain.speaker_attribution import (
     SpeakerAttributionConfig,
@@ -73,7 +74,7 @@ def build_use_case(
     ocr_keyframes_only: bool = False,
     vlm_gate: VlmGateConfig | None = None,
     speech_filter: SpeechFilterConfig | None = None,
-    asr_backend: str = "mlx",
+    asr_backend: str = "faster",  # 非推奨mlxを既定にしない（4AIレビューR1）
     vlm_timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     speaker_attribution: SpeakerAttributionConfig | None = None,
     vlm_backend: str = "ollama",
@@ -86,7 +87,7 @@ def build_use_case(
     ocr_keyframes_only: 会議モード（OCRをキーフレームに限定）。
     vlm_gate: VLM間引きゲート（Noneで無効＝screencast既定）。
     speech_filter: ASR幻覚フィルタ（Noneで無効。CLI経由では既定ON）。
-    asr_backend: 解決済みバックエンド（mlx/faster。既定mlx＝後方互換）。
+    asr_backend: 解決済みバックエンド（cpp/faster/mlx。既定faster）。
     """
     return GenerateWorklog(
         frame_extractor=FfmpegFrameExtractor(
@@ -320,7 +321,7 @@ def _run_batch(
     videos: list[Path],
     output_dir: Path,
     asr_model: str | None,
-    asr_backend: str = "mlx",
+    asr_backend: str = "faster",  # 非推奨mlxを既定にしない（4AIレビューR1）
 ) -> None:
     if asr_model is None:
         # ASRなしでも2フェーズ構造は維持（Phase Aが空になるだけ）
@@ -346,7 +347,7 @@ def _run_batch(
 class _NullTranscriber:
     """ASR無効時の空実装。"""
 
-    def transcribe(self, video_path: Path) -> tuple:
+    def transcribe(self, video_path: Path) -> tuple[TranscriptSegment, ...]:
         return ()
 
 

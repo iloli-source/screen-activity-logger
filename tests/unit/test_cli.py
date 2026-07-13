@@ -34,9 +34,9 @@ class TestBuildUseCase:
     def test_wires_speech_transcriber_when_asr_model_given(
         self, tmp_path: Path
     ) -> None:
-        """Cycle S: ASRモデル指定時はMlxWhisperTranscriberが配線される。"""
-        from screen_activity_logger.infrastructure.mlx_whisper_transcriber import (
-            MlxWhisperTranscriber,
+        """ASRモデル指定時はtranscriberが配線される（既定backend=faster）。"""
+        from screen_activity_logger.infrastructure.faster_whisper_transcriber import (
+            FasterWhisperTranscriber,
         )
 
         use_case = build_use_case(
@@ -45,9 +45,9 @@ class TestBuildUseCase:
             model="qwen3-vl:8b",
             ocr_tolerance_seconds=2.0,
             workdir=tmp_path,
-            asr_model="kaiinui/kotoba-whisper-v2.0-mlx",
+            asr_model="kotoba-tech/kotoba-whisper-v2.0-faster",
         )
-        assert isinstance(use_case.speech_transcriber, MlxWhisperTranscriber)
+        assert isinstance(use_case.speech_transcriber, FasterWhisperTranscriber)
 
     def test_asr_disabled_when_model_is_none(self, tmp_path: Path) -> None:
         use_case = build_use_case(
@@ -124,10 +124,10 @@ class TestBuildUseCase:
         )
         assert isinstance(use_case.speech_transcriber, FasterWhisperTranscriber)
 
-    def test_default_backend_is_mlx(self, tmp_path: Path) -> None:
-        """後方互換: asr_backend未指定は従来どおりmlx配線。"""
-        from screen_activity_logger.infrastructure.mlx_whisper_transcriber import (
-            MlxWhisperTranscriber,
+    def test_default_backend_is_faster(self, tmp_path: Path) -> None:
+        """asr_backend未指定の既定はfaster（非推奨mlxを既定にしない、4AIレビューR1）。"""
+        from screen_activity_logger.infrastructure.faster_whisper_transcriber import (
+            FasterWhisperTranscriber,
         )
 
         use_case = build_use_case(
@@ -136,9 +136,9 @@ class TestBuildUseCase:
             model="qwen3-vl:8b",
             ocr_tolerance_seconds=2.0,
             workdir=tmp_path,
-            asr_model="kaiinui/kotoba-whisper-v2.0-mlx",
+            asr_model="kotoba-tech/kotoba-whisper-v2.0-faster",
         )
-        assert isinstance(use_case.speech_transcriber, MlxWhisperTranscriber)
+        assert isinstance(use_case.speech_transcriber, FasterWhisperTranscriber)
 
     def test_wires_vlm_timeout(self, tmp_path: Path) -> None:
         """H7（Issue #15）: --vlm-timeoutがdescriberに配線される。"""
