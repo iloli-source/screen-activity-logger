@@ -33,8 +33,8 @@
 ```
 ffmpeg(済) + PaddleOCR PP-OCRv6 tiny/small(CPU) + Qwen3-VL-8B Q4(Ollama or mlx-vlm) + 階層型間引き
 ```
-- ランタイムは **Ollama / llama.cpp(Metal) / mlx-vlm** の三択（CUDA系は全て対象外）
-- **mlx-vlm** はQwen3-VLでメモリ10GB→5.5GB・約2倍速の報告あり（Mac最速ルート、§4参照）
+- ランタイムは~~Ollama / llama.cpp(Metal) / mlx-vlm の三択~~ → **2026-07実測で MLX系（vllm-mlx / mlx-vlm）が本線に**（Ollama=llama.cpp MetalはVLM持続推論で40倍遅い実測。§12参照）
+- **mlx-vlm** はVision Feature Caching・APC・speculative decoding搭載（Mac最速ルート、§4参照）
 - **PP-OCRv6 は論文にApple M4実測あり**（tiny 0.96秒/画像、6.1倍速）→ CPU動作で実用十分
 
 ### 0.2 Windows / NVIDIA 構成（Issue #16 対応済み）
@@ -136,7 +136,7 @@ scenedetect -i screen.mp4 detect-content list-scenes save-images
 | **llama.cpp** | 量子化・CPUオフロード | GGUF Q4_K_M + mmproj。Qwen3-VL GGUFは2025-10-30以降 |
 | **LM Studio** | GUI運用(Windows向き) | UI-TARS-desktop連携例あり |
 | **vLLM / SGLang** | バッチ・API化 | 単発ローカルには過剰になりがち |
-| **MLX** | Apple Silicon | Mac加点用。RTX前提なら優先度低 |
+| **vllm-mlx / mlx-vlm** | **Apple Siliconの本線**（2026-07実測で序列更新） | 本リポジトリ実測: vllm-mlxはOllama比**約40倍**（11.3s vs 420-600s/フレーム、M4 Air 24GB、round6/issue8参照）。mlx-vlmはVision Feature Caching等が充実 |
 
 > **注意**: 2026時点でも GGUF/llama.cpp の画像・動画プロセッサ互換は**モデル依存**。Qwen3-VLは Transformers の方が堅く、MiniCPM-V系は Ollama/GGUF の期待値が高い。
 
@@ -282,3 +282,34 @@ GitHub Issues で管理（`gh issue list` 参照）。
 3. 日本語作業ログの品質評価（MS4UI参考）、プロンプト改善、小型テキストLLM分業の検証
 4. OCR比較検証: PaddleOCR PP-OCRv6 vs GLM-OCR vs DeepSeek-OCR（日本語UI文字）
 5. （活用層）作業ログを **Ruri v3 + Faiss** でインデックス化。Qwen3-VL-Embeddingとの併用検討
+
+
+---
+
+## 12. 第3回調査アップデート（2026-07-13: OCR/VLM高速化 round6 ＋ 本リポジトリ実測）
+
+grok(X英語・中国語圏)・codex(論文網羅)・本リポジトリのABBA系実測による更新。生データは `docs/research/round6_*.md`、実測は `docs/research/issue8_speedup_verification.md`。
+
+### 12.1 ランタイム序列の訂正（最重要）
+- **M4系のVLMはMLX系ランタイムが本線**。本リポジトリ実測: vllm-mlx(Qwen3-VL-8B-4bit)は**11.3秒/フレーム**、Ollama(llama.cpp Metal, q4_K_M)は**420〜600秒超**（同一マシン・同一入力・単独常駐で約40倍差）。llama.cpp Metalはvision系の持続推論で劣化し、ReadTimeout群（Issue #15）の根本原因だった
+- vllm-mlxのvision cache（公称28x）は「同一画像マルチターン」用で、フレーム毎に画像が変わる本用途では**効かない**（実測でヒットなし）。採用理由は素の推論速度
+- Ollama公式MLXバックエンドは32GB+のみ（24GB機は対象外）
+
+### 12.2 今すぐ効く高速化（round6の合意点）
+1. **視覚トークン予算で管理**: 長辺pxでなくvisual token数（画面ログは256-512相当から）。max_tokensも128-256で十分（長文출力はdecodeの無駄）
+2. **VLM呼び出し削減が最大のレバー**: OCR Jaccardゲート＋滞留検出（実装済み）で2-10x。全体低解像度＋OCR差分ROI再解析の2段構えは次の一手
+3. **OCR**: PP-OCRv6 tiny/small維持が正解（tinyはv5比3.9x）。Apple Vision (VNRecognizeTextRequest) は「ゲート用の軽量OCR」として比較価値
+4. **段階分離並列**: ASR一括→OCR/差分キュー→VLM単一ワーカー（ファンレス機でVLM中の重CPU並列は熱で逆効果）
+
+### 12.3 ASRバックエンド3実装比較（本リポジトリ実測）
+| | mlx-whisper | faster-whisper(CT2) | whisper.cpp(q5_0) |
+|---|---|---|---|
+| 速度(5分クリップ) | 15-28s | 実用同等 | 21s安定 |
+| **転写品質** | **取りこぼし・退化あり** | **2-4倍のテキストを正しく転写** | 同左 |
+- 品質問題はmlx-whisper固有。**品質重視ならMacでも `--asr-backend faster`**
+
+### 12.4 token pruning系（研究枠、今すぐは移植しない）
+FastVLM(TTFT 3.2x)・ShowUI(33%削減)・FocusUI(1.44x)・FasterVLM/PIO-FVLM(90%+prune)。MLXランタイム側の対応を待って採用判断。
+
+### 12.5 中国発OCRの位置づけ（速度面）
+GLM-OCR(0.9B, MTP高速化)=文書/表向き、DeepSeek-OCR=長文書圧縮向き、GOT-OCR 2.0(580M)=構造出力の第2パス向き。**画面UIの逐次OCRはPP-OCRv6維持**が2026-07の結論。
