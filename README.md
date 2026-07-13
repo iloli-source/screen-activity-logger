@@ -91,6 +91,7 @@ ollama pull qwen3-vl:8b
 #   --vlm-min-gap 10          VLM呼び出しの最小間隔秒（debounce）
 #   --vlm-max-gap 120         VLM強制実行の最大間隔秒（安全弁）
 #   --vlm-timeout 300         VLM試行毎タイムアウト秒（タイムアウト時は自動で1回リトライ）
+#   --speech-summary          発話の1文要旨（🧭）を付与（VLMと同一モデル、処理+1割弱、既定OFF）
 #   --asr-no-speech-prob 0.6  ASR幻覚フィルタ閾値（no_speech_prob）
 #   --asr-avg-logprob -1.0    ASR幻覚フィルタ閾値（avg_logprob）
 #   --no-asr-filter           ASR幻覚フィルタを無効化（デバッグ用）
@@ -161,6 +162,13 @@ brew install whisper-cpp
 ```
 
 whisper.cpp未導入でも動く（autoがfaster-whisperへフォールバック。遅いが正しい）。
+
+### 発話要旨（オプトイン）
+
+`--speech-summary` で、発話3行以上のエントリに日本語1文の要旨（🧭）を付与する。
+VLMと同一バックエンド・同一モデルへのテキストのみ入力で生成するため**追加メモリゼロ**。
+実測: 品質10/10・約2秒/エントリ（5分クリップで全体+7%）。詳細は
+docs/research/issue3_quality_improvement.md のQ4。
 
 ### 話者特定（実験的、オプトイン）
 
