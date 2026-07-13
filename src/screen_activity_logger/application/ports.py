@@ -53,6 +53,12 @@ class SpeechTranscriber(Protocol):
     def transcribe(self, video_path: Path) -> Sequence[TranscriptSegment]: ...
 
 
+class SpeechSummarizer(Protocol):
+    """エントリの発話断片列から日本語1文の要旨を生成する（Issue #23）。"""
+
+    def summarize(self, lines: tuple[str, ...]) -> str | None: ...
+
+
 class WorklogWriter(Protocol):
     """Worklogを永続化する（JSONL/Markdown等）。"""
 

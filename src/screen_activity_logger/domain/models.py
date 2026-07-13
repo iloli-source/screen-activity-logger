@@ -109,6 +109,7 @@ class WorklogEntry:
     location: str | None = None
     focus: str | None = None
     end_timestamp: VideoTimestamp | None = None
+    summary: str | None = None  # 発話の1文要旨（オプトイン、Issue #23）
 
     @property
     def duration_seconds(self) -> float | None:

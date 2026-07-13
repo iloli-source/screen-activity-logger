@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Sequence
 
@@ -10,6 +10,7 @@ from screen_activity_logger.application.ports import (
     FrameComparator,
     FrameExtractor,
     SceneDescriber,
+    SpeechSummarizer,
     SpeechTranscriber,
     TextRecognizer,
     WorklogWriter,
@@ -41,6 +42,9 @@ from screen_activity_logger.domain.vlm_gate import (
 # キーフレームのVLM説明に添える発話の時間窓（前後秒）
 SPEECH_CONTEXT_WINDOW_SECONDS = 15.0
 
+# 発話要旨の対象とする最小発話行数（相槌だけのエントリは要約しない、Issue #23）
+MIN_SPEECH_LINES_FOR_SUMMARY = 3
+
 
 @dataclass(frozen=True)
 class GenerateWorklog:
@@ -66,6 +70,7 @@ class GenerateWorklog:
     vlm_gate: VlmGateConfig | None = None
     speech_filter: SpeechFilterConfig | None = None
     speaker_attribution: SpeakerAttributionConfig | None = None
+    speech_summarizer: SpeechSummarizer | None = None
 
     def execute(
         self,
@@ -100,11 +105,37 @@ class GenerateWorklog:
             )
             for frame in self._frames_to_describe(frames, ocr_by_frame)
         ]
-        return self.merger.merge(
+        worklog = self.merger.merge(
             descriptions=descriptions,
             ocr_texts=ocr_by_frame.values(),
             transcript_segments=segments,
         )
+        return self._attach_summaries(worklog)
+
+    def _attach_summaries(self, worklog: Worklog) -> Worklog:
+        """発話リッチなエントリに1文要旨を付与する（Issue #23、オプトイン）。
+
+        要旨は補助情報のため、生成失敗はエントリを損なわず警告のみで継続する
+        （VLM失敗時のフォールバックと同方針）。
+        """
+        if self.speech_summarizer is None:
+            return worklog
+        entries = []
+        for entry in worklog.entries:
+            summary = None
+            if len(entry.speech) >= MIN_SPEECH_LINES_FOR_SUMMARY:
+                try:
+                    summary = self.speech_summarizer.summarize(entry.speech)
+                except Exception as error:  # noqa: BLE001 — バッチ継続を優先
+                    print(
+                        f"要旨生成失敗 t={entry.timestamp}:"
+                        f" {type(error).__name__}: {error}",
+                        flush=True,
+                    )
+            entries.append(
+                replace(entry, summary=summary) if summary else entry
+            )
+        return Worklog.from_entries(entries)
 
     @staticmethod
     def _speaker_observations(
