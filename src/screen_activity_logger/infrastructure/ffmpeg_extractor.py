@@ -58,6 +58,11 @@ class FfmpegFrameExtractor:
     workdir: Path
     max_long_edge: int = 1024
 
+    def __post_init__(self) -> None:
+        # fps<=0はタイムスタンプ計算のゼロ除算になる（4AIレビューR1）
+        if self.fps <= 0:
+            raise ValueError(f"fpsは正の値が必要です: {self.fps}")
+
     def extract(self, video_path: Path) -> tuple[Frame, ...]:
         frame_paths = self._sample_uniform_frames(video_path)
         scene_seconds = self._detect_scene_changes(video_path)
@@ -100,6 +105,9 @@ class FfmpegFrameExtractor:
     def _build_frames(
         self, frame_paths: tuple[Path, ...], scene_seconds: tuple[float, ...]
     ) -> tuple[Frame, ...]:
+        if not frame_paths:
+            # 破損動画等でフレーム0枚のとき空min()で落ちない（4AIレビューR1）
+            return ()
         timestamps = [index / self.fps for index in range(len(frame_paths))]
         keyframe_indices = {0} | {
             self._nearest_index(timestamps, scene_at) for scene_at in scene_seconds

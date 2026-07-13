@@ -217,6 +217,8 @@ def main(argv: list[str] | None = None) -> int:
     for video in args.videos:
         if not video.exists():
             parser.error(f"動画が見つかりません: {video}")
+    if args.fps <= 0:
+        parser.error(f"--fps は正の値が必要です: {args.fps}")
 
     try:
         ensure_vlm_available(args.vlm_backend, args.vlm_url)

@@ -136,3 +136,23 @@ class TestStaleFrameCleanup:
         assert not stale.exists()
         assert all(f.path.read_bytes() != b"stale-from-previous-video" for f in frames)
         assert 5 <= len(frames) <= 7  # 残渣が数に混入しない
+
+
+class TestInputValidation:
+    """4AIレビューR1: fps=0でZeroDivisionError、フレーム0枚で空min()の回帰。"""
+
+    def test_zero_fps_is_rejected_at_construction(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="fps"):
+            FfmpegFrameExtractor(fps=0.0, scene_threshold=0.1, workdir=tmp_path)
+
+    def test_negative_fps_is_rejected(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="fps"):
+            FfmpegFrameExtractor(fps=-1.0, scene_threshold=0.1, workdir=tmp_path)
+
+    def test_empty_frames_returns_empty_without_crash(self, tmp_path: Path) -> None:
+        extractor = FfmpegFrameExtractor(
+            fps=1.0, scene_threshold=0.1, workdir=tmp_path
+        )
+        # フレーム0枚＋シーン検出ありでも空min()で落ちない
+        frames = extractor._build_frames((), (1.0, 2.0))
+        assert frames == ()
