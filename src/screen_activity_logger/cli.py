@@ -159,8 +159,9 @@ def main(argv: list[str] | None = None) -> int:
         help="VLM呼び出しの試行毎タイムアウト秒（タイムアウト時は1回リトライ、既定: 300）",
     )
     parser.add_argument(
-        "--no-speaker-attribution", action="store_true",
-        help="映像ベース話者特定を無効化する（meetingモード既定ON）",
+        "--speaker-attribution", action="store_true",
+        help="映像ベース話者特定を有効化する（実験的。話者ビュー追従の録画のみ有効、"
+        "ギャラリー/固定タイル録画では誤帰属リスクあり。meetingモード専用）",
     )
     parser.add_argument(
         "--speaker-switch-tolerance", type=float, default=3.0,
@@ -211,12 +212,13 @@ def main(argv: list[str] | None = None) -> int:
             asr_backend=asr_backend,
             vlm_timeout_seconds=args.vlm_timeout,
             ocr_keyframes_only=(args.mode == "meeting"),
-            # 名前ラベル×シーン変化はmeeting録画の構造前提のためmeeting限定
+            # 実測（Issue #10）でボット録画はタイル固定が多く前提が崩れるため
+            # 既定OFFのオプトイン（話者ビュー追従録画でのみ有効な実験的機能）
             speaker_attribution=(
                 SpeakerAttributionConfig(
                     switch_tolerance_seconds=args.speaker_switch_tolerance
                 )
-                if args.mode == "meeting" and not args.no_speaker_attribution
+                if args.mode == "meeting" and args.speaker_attribution
                 else None
             ),
             vlm_gate=(
