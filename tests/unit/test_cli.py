@@ -239,3 +239,34 @@ class TestSpeakerAttributionWiring:
             workdir=tmp_path,
         )
         assert use_case.speaker_attribution is None
+
+
+class TestVlmBackendWiring:
+    """M4（Issue #21）: VLMバックエンドのCLI配線。"""
+
+    def test_wires_vllm_mlx_backend(self, tmp_path: Path) -> None:
+        from screen_activity_logger.infrastructure.openai_chat_describer import (
+            OpenAIChatSceneDescriber,
+        )
+
+        use_case = build_use_case(
+            fps=0.5,
+            scene_threshold=0.08,
+            model="qwen3-vl:8b",
+            ocr_tolerance_seconds=2.0,
+            workdir=tmp_path,
+            vlm_backend="vllm-mlx",
+            vlm_url="http://localhost:9000/v1",
+        )
+        assert isinstance(use_case.scene_describer, OpenAIChatSceneDescriber)
+        assert use_case.scene_describer._base_url == "http://localhost:9000/v1"
+
+    def test_default_backend_is_ollama(self, tmp_path: Path) -> None:
+        use_case = build_use_case(
+            fps=0.5,
+            scene_threshold=0.08,
+            model="qwen3-vl:8b",
+            ocr_tolerance_seconds=2.0,
+            workdir=tmp_path,
+        )
+        assert isinstance(use_case.scene_describer, OllamaSceneDescriber)

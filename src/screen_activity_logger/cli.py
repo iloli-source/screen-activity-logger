@@ -37,7 +37,13 @@ from screen_activity_logger.infrastructure.mlx_whisper_transcriber import (
 )
 from screen_activity_logger.infrastructure.ollama_describer import (
     DEFAULT_TIMEOUT_SECONDS,
-    OllamaSceneDescriber,
+)
+from screen_activity_logger.infrastructure.openai_chat_describer import (
+    DEFAULT_VLLM_URL,
+)
+from screen_activity_logger.infrastructure.vlm_factory import (
+    create_describer,
+    ensure_backend_available as ensure_vlm_available,
 )
 from screen_activity_logger.infrastructure.paddle_ocr import PaddleOcrRecognizer
 from screen_activity_logger.infrastructure.writers import (
@@ -68,6 +74,8 @@ def build_use_case(
     asr_backend: str = "mlx",
     vlm_timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     speaker_attribution: SpeakerAttributionConfig | None = None,
+    vlm_backend: str = "ollama",
+    vlm_url: str = DEFAULT_VLLM_URL,
 ) -> GenerateWorklog:
     """設定値から全アダプタを組み立てたユースケースを返す。
 
@@ -82,8 +90,9 @@ def build_use_case(
             fps=fps, scene_threshold=scene_threshold, workdir=workdir
         ),
         text_recognizer=PaddleOcrRecognizer(tier=ocr_tier),
-        scene_describer=OllamaSceneDescriber(
-            model=model, timeout_seconds=vlm_timeout_seconds
+        scene_describer=create_describer(
+            vlm_backend, model, timeout_seconds=vlm_timeout_seconds,
+            base_url=vlm_url,
         ),
         merger=TimelineMerger(ocr_match_tolerance_seconds=ocr_tolerance_seconds),
         frame_comparator=PilFrameComparator(threshold=diff_threshold),
@@ -155,6 +164,14 @@ def main(argv: list[str] | None = None) -> int:
         help="VLM強制実行の最大間隔秒（安全弁、既定: 120）",
     )
     parser.add_argument(
+        "--vlm-backend", choices=["ollama", "vllm-mlx"], default="ollama",
+        help="VLMバックエンド（vllm-mlxは実測約40倍高速・要サーバー起動、既定: ollama）",
+    )
+    parser.add_argument(
+        "--vlm-url", default=DEFAULT_VLLM_URL,
+        help=f"vllm-mlxサーバーURL（既定: {DEFAULT_VLLM_URL}）",
+    )
+    parser.add_argument(
         "--vlm-timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS,
         help="VLM呼び出しの試行毎タイムアウト秒（タイムアウト時は1回リトライ、既定: 300）",
     )
@@ -185,6 +202,10 @@ def main(argv: list[str] | None = None) -> int:
         if not video.exists():
             parser.error(f"動画が見つかりません: {video}")
 
+    try:
+        ensure_vlm_available(args.vlm_backend, args.vlm_url)
+    except ValueError as exc:
+        parser.error(str(exc))
     asr_backend = resolve_backend(args.asr_backend)
     if not args.no_asr:
         try:
@@ -211,6 +232,8 @@ def main(argv: list[str] | None = None) -> int:
             asr_model=asr_model,
             asr_backend=asr_backend,
             vlm_timeout_seconds=args.vlm_timeout,
+            vlm_backend=args.vlm_backend,
+            vlm_url=args.vlm_url,
             ocr_keyframes_only=(args.mode == "meeting"),
             # 実測（Issue #10）でボット録画はタイル固定が多く前提が崩れるため
             # 既定OFFのオプトイン（話者ビュー追従録画でのみ有効な実験的機能）
