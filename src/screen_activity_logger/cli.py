@@ -219,6 +219,13 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(f"動画が見つかりません: {video}")
     if args.fps <= 0:
         parser.error(f"--fps は正の値が必要です: {args.fps}")
+    # パイプライン深部で素のFileNotFoundErrorにしない（4AIレビューR1）
+    import shutil as _shutil
+    for binary in ("ffmpeg", "ffprobe"):
+        if _shutil.which(binary) is None:
+            parser.error(
+                f"{binary} が見つかりません。README「動作要件」に従い導入してください"
+            )
 
     try:
         ensure_vlm_available(args.vlm_backend, args.vlm_url)

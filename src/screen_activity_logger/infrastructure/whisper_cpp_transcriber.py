@@ -27,6 +27,9 @@ DEFAULT_CPP_ASR_MODEL_PATH = (
 
 _MS_PER_SECOND = 1000.0
 
+# 3時間音声≒15分（実測15倍速）に余裕を持たせた上限（ハング防止、4AIレビューR1）
+WHISPER_CLI_TIMEOUT_SECONDS = 7200.0
+
 
 def segments_from_cpp_json(payload: dict) -> tuple[TranscriptSegment, ...]:
     """whisper-cli -oj のJSONをTranscriptSegment列に変換する。
@@ -80,6 +83,7 @@ class WhisperCppTranscriber:
             ],
             check=True,
             capture_output=True,
+            timeout=WHISPER_CLI_TIMEOUT_SECONDS,
         )
         json_path = output_prefix.with_suffix(".json")
         return json.loads(json_path.read_text(encoding="utf-8"))

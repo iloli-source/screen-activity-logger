@@ -17,6 +17,11 @@ from screen_activity_logger.domain.models import Frame, VideoTimestamp
 
 _PTS_TIME_PATTERN = re.compile(r"pts_time:([0-9]+(?:\.[0-9]+)?)")
 
+# ffprobeは即答、フレーム抽出/シーン検出は3時間級入力の実測から余裕を持たせた上限
+# （無制限はハング時にバッチ全体が永久停止する、4AIレビューR1）
+FFPROBE_TIMEOUT_SECONDS = 60.0
+FFMPEG_PASS_TIMEOUT_SECONDS = 3600.0
+
 
 def parse_scene_timestamps(ffmpeg_stderr: str) -> tuple[float, ...]:
     """showinfoフィルタのstderr出力からpts_time（秒）を抽出する。"""
@@ -41,6 +46,7 @@ def has_audio_stream(video_path: Path) -> bool:
         check=True,
         capture_output=True,
         text=True,
+        timeout=FFPROBE_TIMEOUT_SECONDS,
     )
     return parse_audio_stream_presence(result.stdout)
 
@@ -85,6 +91,7 @@ class FfmpegFrameExtractor:
             ],
             check=True,
             capture_output=True,
+            timeout=FFMPEG_PASS_TIMEOUT_SECONDS,
         )
         return tuple(sorted(self.workdir.glob("frame_*.png")))
 
@@ -99,6 +106,7 @@ class FfmpegFrameExtractor:
             check=True,
             capture_output=True,
             text=True,
+            timeout=FFMPEG_PASS_TIMEOUT_SECONDS,
         )
         return parse_scene_timestamps(result.stderr)
 

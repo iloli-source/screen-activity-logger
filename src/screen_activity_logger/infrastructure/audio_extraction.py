@@ -10,6 +10,10 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+# 3時間級入力の実測（2時間で数分）から十分な余裕を持たせた上限。
+# 無制限だとffmpegハングでバッチ全体が永久停止する（4AIレビューR1）
+FFMPEG_TIMEOUT_SECONDS = 1800.0
+
 
 def ffmpeg_wav_command(video_path: Path, wav_path: Path) -> list[str]:
     """16kHzモノラルwav抽出コマンドを構築する（純粋関数）。"""
@@ -25,4 +29,5 @@ def extract_audio_wav(video_path: Path, wav_path: Path) -> None:
         ffmpeg_wav_command(video_path, wav_path),
         check=True,
         capture_output=True,
+        timeout=FFMPEG_TIMEOUT_SECONDS,
     )
