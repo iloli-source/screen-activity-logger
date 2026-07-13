@@ -66,6 +66,10 @@ def main(argv: list[str] | None = None) -> int:
     query_parser.add_argument("text", help="検索クエリ（日本語可）")
     query_parser.add_argument("-i", "--index-dir", type=Path, required=True)
     query_parser.add_argument("-k", type=int, default=5, help="上位件数（既定: 5）")
+    query_parser.add_argument(
+        "--model", default=DEFAULT_EMBEDDING_MODEL,
+        help="クエリ埋め込みモデル（索引作成時と同一である必要あり）",
+    )
 
     args = parser.parse_args(argv)
 
@@ -79,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"索引を作成しました: {count}件 → {args.index_dir}")
         return 0
 
-    hits = build_query_use_case().execute(
+    hits = build_query_use_case(model=args.model).execute(
         args.text, index_dir=args.index_dir, k=args.k
     )
     if not hits:
