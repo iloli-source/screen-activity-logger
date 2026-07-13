@@ -50,3 +50,17 @@ def filter_segments(
 ) -> tuple[TranscriptSegment, ...]:
     """順序を保持して信頼できるセグメントのみ残す。"""
     return tuple(seg for seg in segments if is_reliable_segment(seg, config))
+
+
+def collapse_repeated_lines(lines: tuple[str, ...]) -> tuple[str, ...]:
+    """連続する同一発話行を1行に圧縮する（Issue #3）。
+
+    ASRは相槌や言い直しで同一テキストを連続出力しやすく、そのまま列挙すると
+    可読性を下げる。間に別発話を挟む反復は会話の流れとして意味を持つため
+    保持する（全体dedupはしない）。
+    """
+    collapsed: list[str] = []
+    for line in lines:
+        if not collapsed or collapsed[-1] != line:
+            collapsed.append(line)
+    return tuple(collapsed)

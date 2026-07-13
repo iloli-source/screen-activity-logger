@@ -96,3 +96,34 @@ class TestFilterSegments:
 
     def test_empty_input_gives_empty_tuple(self) -> None:
         assert filter_segments((), SpeechFilterConfig()) == ()
+
+
+class TestCollapseRepeatedLines:
+    def test_collapses_consecutive_duplicates(self) -> None:
+        # 実バグ（Issue #3）: 「アドメット」×2「はい」×3がそのまま列挙されていた
+        from screen_activity_logger.domain.speech_filter import (
+            collapse_repeated_lines,
+        )
+
+        lines = ("アドメット", "アドメット", "はい", "はい", "はい", "了解です")
+
+        collapsed = collapse_repeated_lines(lines)
+
+        assert collapsed == ("アドメット", "はい", "了解です")
+
+    def test_keeps_non_consecutive_duplicates(self) -> None:
+        from screen_activity_logger.domain.speech_filter import (
+            collapse_repeated_lines,
+        )
+
+        # 間に別発話を挟む反復は会話として意味があるため保持する
+        lines = ("はい", "お願いします", "はい")
+
+        assert collapse_repeated_lines(lines) == lines
+
+    def test_empty_input(self) -> None:
+        from screen_activity_logger.domain.speech_filter import (
+            collapse_repeated_lines,
+        )
+
+        assert collapse_repeated_lines(()) == ()

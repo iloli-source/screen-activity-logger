@@ -212,3 +212,23 @@ class TestAggregateDurationsByApp:
 
         worklog = Worklog.from_entries([self._entry("Excel", 0.0, None)])
         assert aggregate_durations_by_app(worklog) == ()
+
+
+class TestAttachSpeechCollapse:
+    def test_consecutive_duplicate_speech_is_collapsed(self) -> None:
+        """連続する同一発話は1行に圧縮される（Issue #3）。"""
+        merger = TimelineMerger(ocr_match_tolerance_seconds=1.0)
+        segments = [
+            TranscriptSegment(
+                start=VideoTimestamp(seconds=float(11 + i)),
+                end=VideoTimestamp(seconds=float(12 + i)),
+                text=text,
+            )
+            for i, text in enumerate(["はい", "はい", "承知しました", "はい"])
+        ]
+        worklog = merger.merge(
+            descriptions=[_desc(10.0, "会議")],
+            ocr_texts=[],
+            transcript_segments=segments,
+        )
+        assert worklog.entries[0].speech == ("はい", "承知しました", "はい")

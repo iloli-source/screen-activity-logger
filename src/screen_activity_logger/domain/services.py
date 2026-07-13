@@ -17,6 +17,7 @@ from screen_activity_logger.domain.models import (
     WorklogEntry,
 )
 from screen_activity_logger.domain.speaker_attribution import format_speech_line
+from screen_activity_logger.domain.speech_filter import collapse_repeated_lines
 
 
 def aggregate_durations_by_app(worklog: Worklog) -> tuple[tuple[str, float], ...]:
@@ -144,11 +145,11 @@ class TimelineMerger:
             )
             # 先頭エントリは窓の開始を0秒に広げ、冒頭の発話も拾う
             window_start = 0.0 if index == 0 else entry.timestamp.seconds
-            speech = tuple(
+            speech = collapse_repeated_lines(tuple(
                 format_speech_line(seg)  # 話者付きなら「話者: テキスト」（#10）
                 for seg in ordered_segments
                 if window_start <= seg.start.seconds < window_end
-            )
+            ))
             # replaceで再構築し、resource/location/focus等の他フィールドを保持する
             result.append(replace(entry, speech=speech))
         return tuple(result)
