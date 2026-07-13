@@ -29,8 +29,12 @@ def build_index_use_case(model: str = DEFAULT_EMBEDDING_MODEL) -> IndexWorklogs:
     )
 
 
-def build_query_use_case() -> SearchWorklogs:
-    return SearchWorklogs(embedder=RuriEmbedder(), index=NumpyVectorIndex())
+def build_query_use_case(model: str = DEFAULT_EMBEDDING_MODEL) -> SearchWorklogs:
+    return SearchWorklogs(
+        embedder=RuriEmbedder(model=model),
+        index=NumpyVectorIndex(),
+        model_name=model,
+    )
 
 
 def format_hit(rank: int, hit: SearchHit) -> str:

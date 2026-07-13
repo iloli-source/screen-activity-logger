@@ -90,7 +90,9 @@ class VectorSearchIndex(Protocol):
 
     def save(self, index_dir: Path) -> None: ...
 
-    def load(self, index_dir: Path) -> None: ...
+    def load(
+        self, index_dir: Path, expected_model: str | None = None
+    ) -> None: ...
 
     def search(
         self, query_vector: Sequence[float], k: int

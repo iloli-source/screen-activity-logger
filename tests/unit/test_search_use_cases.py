@@ -65,7 +65,8 @@ class InMemoryIndex:
     def save(self, index_dir: Path) -> None:
         self.saved_dir = index_dir
 
-    def load(self, index_dir: Path) -> None:
+    def load(self, index_dir: Path, expected_model: str | None = None) -> None:
+        self.loaded_expected_model = expected_model
         self.loaded_dir = index_dir
 
     def search(self, query_vector, k):
@@ -169,3 +170,19 @@ class TestSearchCliBuilders:
         assert "00:01:46〜00:03:21" in line
         assert "Excel" in line
         assert "SUM関数で集計している" in line
+
+
+class TestSearchWorklogsModelGuard:
+    """4AIレビューR1: 索引モデルとクエリ埋め込みモデルの不一致を検出する。"""
+
+    def test_load_receives_expected_model(self, tmp_path: Path) -> None:
+        embedder = FakeEmbedder()
+        index = InMemoryIndex()
+        index.build([], [], model_name="model-a")
+
+        use_case = SearchWorklogs(
+            embedder=embedder, index=index, model_name="model-a"
+        )
+        use_case.execute("query", index_dir=tmp_path, k=1)
+
+        assert index.loaded_expected_model == "model-a"

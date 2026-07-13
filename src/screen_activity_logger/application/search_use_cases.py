@@ -44,12 +44,17 @@ class IndexWorklogs:
 
 @dataclass(frozen=True)
 class SearchWorklogs:
-    """保存済み索引に対する意味検索。"""
+    """保存済み索引に対する意味検索。
+
+    model_name: クエリ埋め込みに使うモデル。索引manifestと不一致なら
+    load側が明示エラーにする（無言の無意味スコアを防ぐ、4AIレビューR1）。
+    """
 
     embedder: TextEmbedder
     index: VectorSearchIndex
+    model_name: str | None = None
 
     def execute(self, query: str, index_dir: Path, k: int = 5) -> tuple[SearchHit, ...]:
-        self.index.load(index_dir)
+        self.index.load(index_dir, expected_model=self.model_name)
         query_vector = self.embedder.embed_query(query)
         return self.index.search(query_vector, k=k)
