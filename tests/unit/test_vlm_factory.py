@@ -41,8 +41,30 @@ class TestCreateDescriber:
 
 
 class TestEnsureBackendAvailable:
-    def test_ollama_is_never_checked(self) -> None:
-        ensure_backend_available("ollama")  # 例外なし（httpx呼び出しもなし）
+    def test_ollama_reachable_passes(self, monkeypatch) -> None:
+        import sys
+        import types
+
+        fake = types.SimpleNamespace(list=lambda: {"models": []})
+        monkeypatch.setitem(sys.modules, "ollama", fake)
+
+        ensure_backend_available("ollama")  # 例外なし
+
+    def test_ollama_unreachable_raises_with_hint(self, monkeypatch) -> None:
+        import sys
+        import types
+
+        def fail_list():
+            raise ConnectionError("refused")
+
+        fake = types.SimpleNamespace(list=fail_list)
+        monkeypatch.setitem(sys.modules, "ollama", fake)
+
+        import pytest
+
+        with pytest.raises(ValueError) as excinfo:
+            ensure_backend_available("ollama")
+        assert "ollama serve" in str(excinfo.value)
 
     def test_unreachable_vllm_raises_with_hint(self, monkeypatch) -> None:
         def fail_get(url, timeout=None):
