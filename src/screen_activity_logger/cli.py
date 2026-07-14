@@ -49,6 +49,9 @@ from screen_activity_logger.infrastructure.vlm_factory import (
     ensure_backend_available as ensure_vlm_available,
 )
 from screen_activity_logger.infrastructure.paddle_ocr import PaddleOcrRecognizer
+from screen_activity_logger.infrastructure.manual_writer import (
+    ManualMarkdownWriter,
+)
 from screen_activity_logger.infrastructure.writers import (
     JsonlWorklogWriter,
     MarkdownWorklogWriter,
@@ -192,6 +195,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--vlm-timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS,
         help="VLM呼び出しの試行毎タイムアウト秒（タイムアウト時は1回リトライ、既定: 300）",
+    )
+    parser.add_argument(
+        "--format", choices=["worklog", "manual"], default="worklog",
+        dest="output_format",
+        help="出力形式（manual: ステップ構造の手順書manual.md。screencast録画向け。"
+        "worklog.jsonlは常に出力、既定: worklog）",
     )
     parser.add_argument(
         "--save-frames", action="store_true",
@@ -340,7 +349,10 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
         if len(args.videos) == 1:
-            _run_single(use_case, args.videos[0], args.output_dir)
+            _run_single(
+                use_case, args.videos[0], args.output_dir,
+                output_format=args.output_format,
+            )
         else:
             _run_batch(
                 use_case, args.videos, args.output_dir, asr_model, asr_backend
@@ -349,12 +361,17 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run_single(
-    use_case: GenerateWorklog, video: Path, output_dir: Path
+    use_case: GenerateWorklog, video: Path, output_dir: Path,
+    output_format: str = "worklog",
 ) -> None:
     worklog = use_case.execute(video)
-    md_path = output_dir / "worklog.md"
     jsonl_path = output_dir / "worklog.jsonl"
-    MarkdownWorklogWriter().write(worklog, md_path)
+    if output_format == "manual":
+        md_path = output_dir / "manual.md"
+        ManualMarkdownWriter(source_name=video.stem).write(worklog, md_path)
+    else:
+        md_path = output_dir / "worklog.md"
+        MarkdownWorklogWriter().write(worklog, md_path)
     JsonlWorklogWriter().write(worklog, jsonl_path)
     print(f"エントリ数: {len(worklog.entries)}")
     print(f"出力: {md_path}")
