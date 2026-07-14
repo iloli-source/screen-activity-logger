@@ -80,6 +80,12 @@ class GenerateWorklog:
     ) -> Worklog:
         """precomputed_segments指定時はtranscriberを呼ばずそれを使う（2フェーズ用）。"""
         frames = self.frame_extractor.extract(video_path)
+        if not frames:
+            # 空worklogを黙って出すとASR結果ごと消える（4AIレビューR2）
+            raise ValueError(
+                f"フレームを1枚も抽出できませんでした: {video_path}"
+                "（動画が破損しているか、対応していない形式の可能性）"
+            )
         segments = (
             precomputed_segments
             if precomputed_segments is not None
@@ -298,20 +304,48 @@ class BatchGenerateWorklog:
     def execute(
         self, video_paths: Sequence[Path], output_dir: Path
     ) -> list[tuple[Path, Worklog]]:
-        # Phase A: 全動画のASR
-        segments_by_video = {
-            video: tuple(self.transcriber.transcribe(video))
-            for video in video_paths
-        }
-        # Phase B: 各動画の画像解析と出力
+        self._ensure_unique_stems(video_paths)
+        # Phase A: 全動画のASR（1本の失敗で全体を止めない、4AIレビューR2）
+        segments_by_video = {}
+        for video in video_paths:
+            try:
+                segments_by_video[video] = tuple(self.transcriber.transcribe(video))
+            except Exception as error:  # noqa: BLE001 — 動画単位で隔離
+                print(
+                    f"ASR失敗（発話なしで続行） {video.name}:"
+                    f" {type(error).__name__}: {error}",
+                    flush=True,
+                )
+                segments_by_video[video] = ()
+        # Phase B: 各動画の画像解析と出力（失敗動画はスキップして続行）
         results: list[tuple[Path, Worklog]] = []
         for video in video_paths:
-            worklog = self.use_case.execute(
-                video, precomputed_segments=segments_by_video[video]
-            )
+            try:
+                worklog = self.use_case.execute(
+                    video, precomputed_segments=segments_by_video[video]
+                )
+            except Exception as error:  # noqa: BLE001 — 動画単位で隔離
+                print(
+                    f"処理失敗（スキップ） {video.name}:"
+                    f" {type(error).__name__}: {error}",
+                    flush=True,
+                )
+                continue
             video_out = output_dir / video.stem
             video_out.mkdir(parents=True, exist_ok=True)
             for writer, filename in self.writers:
                 writer.write(worklog, video_out / filename)
             results.append((video, worklog))
         return results
+
+    @staticmethod
+    def _ensure_unique_stems(video_paths: Sequence[Path]) -> None:
+        """同名stem（a/x.mp4とb/x.mp4）の出力上書きを事前に拒否する（4AIレビューR2）。"""
+        seen: dict[str, Path] = {}
+        for video in video_paths:
+            if video.stem in seen:
+                raise ValueError(
+                    f"出力ディレクトリが衝突します: {seen[video.stem]} と {video}"
+                    "（同名ファイルはリネームするか別々に実行してください）"
+                )
+            seen[video.stem] = video

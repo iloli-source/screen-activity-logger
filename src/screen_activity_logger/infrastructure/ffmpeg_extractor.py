@@ -34,7 +34,23 @@ def parse_audio_stream_presence(ffprobe_output: str) -> bool:
 
 
 def has_audio_stream(video_path: Path) -> bool:
-    """動画に音声トラックがあるかをffprobeで判定する。"""
+    """動画に音声トラックがあるかをffprobeで判定する。
+
+    破損動画等でffprobeが失敗した場合はFalse（＝ASRスキップ）に倒す。
+    判定関数の失敗で起動全体を止めない（4AIレビューR2）。
+    """
+    try:
+        return _probe_audio_stream(video_path)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+        print(
+            f"音声トラック判定に失敗（ASRスキップ扱い） {video_path.name}:"
+            f" {type(error).__name__}",
+            flush=True,
+        )
+        return False
+
+
+def _probe_audio_stream(video_path: Path) -> bool:
     result = subprocess.run(
         [
             "ffprobe", "-v", "error",

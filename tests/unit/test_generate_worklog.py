@@ -124,12 +124,14 @@ class TestGenerateWorklog:
         assert entry.action == "作業@2.0"
         assert entry.ocr_lines == ("text@2.0",)
 
-    def test_empty_frames_give_empty_worklog(self) -> None:
+    def test_empty_frames_raise_explicit_error(self) -> None:
+        # 空worklogを黙って出すとASR結果ごと消えるため明示エラー（4AIレビューR2）
+        import pytest
+
         use_case, _, _ = _use_case([])
 
-        worklog = use_case.execute(Path("/tmp/video.mp4"))
-
-        assert worklog.entries == ()
+        with pytest.raises(ValueError, match="フレームを1枚も抽出できません"):
+            use_case.execute(Path("/tmp/video.mp4"))
 
 
 class TestOcrSkipWithComparator:
