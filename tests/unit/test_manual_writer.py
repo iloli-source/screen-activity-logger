@@ -59,7 +59,8 @@ class TestManualMarkdownWriter:
         assert "## Step 2: 数式を入力している" in text
         assert "![00:01:05](frames/frame_000105.png)" in text
         assert "👁 数式バー" in text
-        assert "- `=SUM(D4:D7)`" in text
+        assert "対象: Excel" in text
+        assert "- `=SUM(D4:D7)`" not in text  # 生OCRは手順書では省略（jsonlに常在）
 
     def test_speech_is_omitted_from_manual(self, tmp_path: Path) -> None:
         # 手順書は操作の再現が目的。発話はworklog.jsonlに残る

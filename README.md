@@ -75,6 +75,8 @@ ollama pull qwen3-vl:8b
 
 # オプション
 #   --mode meeting            会議向け: OCRキーフレーム限定＋VLMゲート有効
+#   --format manual           ステップ構造の手順書manual.mdを出力（screencast向け、既定: worklog）
+#   --save-frames             キーフレーム画像を frames/ に保存しMarkdownに埋め込む（既定OFF）
 #   --fps 0.5                 サンプリング頻度（既定0.5=2秒に1枚）
 #   --scene-threshold 0.08    シーン変化の閾値
 #   --model qwen3-vl:8b       OllamaのVLMモデル
@@ -165,6 +167,20 @@ brew install whisper-cpp
 ```
 
 whisper.cpp未導入でも動く（autoがfaster-whisperへフォールバック。遅いが正しい）。
+
+### 手順書モード（オプトイン）
+
+`--format manual --save-frames` で、screencast録画から**ステップ構造のビジュアル手順書**を生成する:
+
+```markdown
+## Step 2: 合計列の福岡店のセルにサム関数を入力するため、カーソルを置いている
+![00:00:10](frames/frame_000010.png)
+対象: Excel — 店舗別売上実績（Sheet1）
+👁 セルF8（合計列の福岡行）
+```
+
+追加のAI呼び出しゼロ（既存エントリの機械的再構成）。生OCR・発話は手順書では省略されるが、
+worklog.jsonl に常に残る。`--save-frames` は機密画面の生画像が成果物に残るため既定OFF。
 
 ### 発話要旨（オプトイン）
 

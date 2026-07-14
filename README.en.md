@@ -100,6 +100,10 @@ Measured on M4 Air 24GB: a 5-minute meeting clip completes in **~63 seconds** (v
 
 ```
 --mode screencast|meeting     processing profile (default: screencast)
+--format worklog|manual       output a step-structured visual manual (manual.md) instead of
+                              the timeline log — for screencasts; no extra AI calls (default: worklog)
+--save-frames                 save per-entry keyframe images under frames/ and embed them in
+                              the Markdown (off by default: raw screen images may be sensitive)
 --asr-backend auto|cpp|faster|mlx ASR backend (auto: Apple Silicon→cpp via whisper.cpp,
                               falls back to faster when whisper.cpp is missing; other OSes→faster.
                               mlx is deprecated — its output collapses on long recordings, Issue #22)

@@ -66,6 +66,10 @@ def parse_fields(content: str) -> dict[str, str | None]:
     try:
         payload = json.loads(cleaned)
     except json.JSONDecodeError:
+        if cleaned.startswith("{"):
+            # 閉じ括弧欠け等の不正JSON: 生テキストをactionにせず
+            # フィールドを正規表現で救出する（Issue #26 E2Eで顕在化）
+            return _salvage_fields(cleaned)
         return {**empty, "action": cleaned}
     fields: dict[str, str | None] = {
         key: normalize_json_value(payload.get(key)) for key in empty
@@ -75,6 +79,28 @@ def parse_fields(content: str) -> dict[str, str | None]:
     fields["action"] = (
         normalize_json_value(payload.get("action")) or FALLBACK_ACTION
     )
+    return fields
+
+
+_FIELD_PATTERN = re.compile(r'"(app_guess|resource|location|focus|action)"\s*:\s*"((?:[^"\\]|\\.)*)"')
+
+
+def _salvage_fields(broken_json: str) -> dict[str, str | None]:
+    """JSONとして壊れた応答からフィールド値を正規表現で拾う。"""
+    fields: dict[str, str | None] = {
+        "app_guess": None,
+        "resource": None,
+        "location": None,
+        "focus": None,
+    }
+    action = None
+    for match in _FIELD_PATTERN.finditer(broken_json):
+        key, value = match.group(1), match.group(2)
+        if key == "action":
+            action = normalize_json_value(value)
+        else:
+            fields[key] = normalize_json_value(value)
+    fields["action"] = action or FALLBACK_ACTION
     return fields
 
 

@@ -66,3 +66,31 @@ class TestBuildPromptQualityCriteria:
         assert "後から読み返して作業内容を思い出せ" in prompt  # 本人視点の品質基準
         assert "第三者が業務の流れを追える" in prompt  # 第三者視点の品質基準
         assert "常体" in prompt  # 文体統一の指示
+
+
+class TestMalformedJsonSalvage:
+    """Issue #26 E2Eで顕在化: 閉じ括弧欠け等の不正JSONからフィールドを救出する。"""
+
+    def test_unclosed_json_fields_are_salvaged(self) -> None:
+        content = (
+            '{"app_guess": "Chrome", "resource": "動画ページ",'
+            ' "location": null, "focus": "タイトル",'
+            ' "action": "動画ページを開いて説明を開始する準備をしている"'
+        )  # 閉じ括弧なし
+
+        fields = parse_fields(content)
+
+        assert fields["action"] == "動画ページを開いて説明を開始する準備をしている"
+        assert fields["app_guess"] == "Chrome"
+        assert fields["resource"] == "動画ページ"
+
+    def test_json_like_without_action_falls_back(self) -> None:
+        fields = parse_fields('{"app_guess": "Excel", "resource": "x.xlsx"')
+
+        assert fields["action"] == FALLBACK_ACTION  # 生JSON断片をactionにしない
+        assert fields["app_guess"] == "Excel"
+
+    def test_plain_text_still_becomes_action(self) -> None:
+        fields = parse_fields("画面を確認しています")
+
+        assert fields["action"] == "画面を確認しています"

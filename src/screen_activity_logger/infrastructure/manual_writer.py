@@ -24,6 +24,17 @@ def step_title(action: str) -> str:
     return first_sentence[: _TITLE_MAX_CHARS - 1] + "…"
 
 
+def _format_target(entry: WorklogEntry) -> str | None:
+    """操作対象（アプリ・ファイル・位置）の1行表記。"""
+    parts = [p for p in (entry.app_guess, entry.resource) if p]
+    if not parts:
+        return None
+    line = "対象: " + " — ".join(parts)
+    if entry.location:
+        line += f"（{entry.location}）"
+    return line
+
+
 class ManualMarkdownWriter:
     """Worklogをステップ構造の手順書Markdownとして書き出す。"""
 
@@ -40,15 +51,19 @@ class ManualMarkdownWriter:
 
     @staticmethod
     def _to_step(number: int, entry: WorklogEntry) -> str:
-        body = [f"## Step {number}: {step_title(entry.action)}", ""]
+        title = step_title(entry.action)
+        body = [f"## Step {number}: {title}", ""]
         if entry.frame_image:
             body.append(f"![{entry.timestamp}]({entry.frame_image})")
             body.append("")
+        target = _format_target(entry)
+        if target:
+            body.append(target)
         if entry.focus:
             body.append(f"👁 {entry.focus}")
-        body.append(entry.action)
-        if entry.ocr_lines:
-            body.append("")
-            body.extend(f"- `{line}`" for line in entry.ocr_lines)
+        # 見出しと同一のactionは重複掲載しない（1文のactionが大半）
+        if entry.action.rstrip("。") != title.rstrip("…"):
+            body.append(entry.action)
+        # 生OCRは手順書では省略（ノイズ行が多い。一次情報はworklog.jsonlに常在）
         body.append("")
         return "\n".join(body)
