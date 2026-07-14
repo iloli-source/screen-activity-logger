@@ -110,7 +110,8 @@ Measured on M4 Air 24GB: a 5-minute meeting clip completes in **~63 seconds** (v
 --ocr-tier tiny|small|medium  OCR model size (default: small)
 --vlm-timeout 300             per-attempt VLM timeout seconds (auto-retry once on timeout, with per-call telemetry)
 --vlm-skip-threshold 0.85     VLM gate Jaccard threshold (meeting mode)
---no-asr-filter               disable the ASR hallucination filter (debug)
+--keep-fillers                keep filler-only speech lines ("はい", "えーと"; cut by default)
+--no-asr-filter               disable the ASR hallucination filter (debug; also disables filler cut)
 ```
 
 ## Design principles

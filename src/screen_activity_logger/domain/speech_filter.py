@@ -12,10 +12,21 @@ AND（no_speech_prob > 閾値 かつ avg_logprob < 閾値）で保守的に除�
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Sequence
 
 from screen_activity_logger.domain.models import TranscriptSegment
+
+# 相槌・つなぎ言葉（これらの組合せ「のみ」で構成される行をカットする、Issue #25）。
+# 保守的リスト: 単独行で意味情報を持たないものに限定。文中のフィラー切除はしない
+FILLER_TOKENS = (
+    "えーと", "えっと", "あのー", "あの", "うーん", "ふーん", "なるほど",
+    "はい", "うん", "ええ", "えー", "あー", "おー", "ほう", "まあ",
+)
+_FILLER_PATTERN = re.compile("^(" + "|".join(FILLER_TOKENS) + ")+$")
+_PUNCTUATION_PATTERN = re.compile(r"[、。，．,.!！?？\s]+")
 
 
 @dataclass(frozen=True)
@@ -24,6 +35,7 @@ class SpeechFilterConfig:
 
     no_speech_threshold: float = 0.6
     logprob_threshold: float = -1.0
+    remove_fillers: bool = True  # 相槌のみの行をカット（Issue #25、--keep-fillersでOFF）
 
 
 def has_verbal_content(text: str) -> bool:
@@ -31,12 +43,26 @@ def has_verbal_content(text: str) -> bool:
     return any(ch.isalnum() for ch in text)
 
 
+def is_filler_only(text: str) -> bool:
+    """相槌・つなぎ言葉のみの行か（Issue #25）。
+
+    句読点・空白・全半角ゆらぎを正規化してからFILLER_TOKENSの組合せのみで
+    構成されるかを判定する（「はいはい」「はい、はい。」「あのー、えっと」を捕捉）。
+    """
+    normalized = _PUNCTUATION_PATTERN.sub("", unicodedata.normalize("NFKC", text))
+    if not normalized:
+        return False  # 空・記号のみは has_verbal_content の担当
+    return _FILLER_PATTERN.match(normalized) is not None
+
+
 def is_reliable_segment(
     segment: TranscriptSegment, config: SpeechFilterConfig
 ) -> bool:
-    """セグメントを保持すべきかの真理値表（Issue #14）。"""
+    """セグメントを保持すべきかの真理値表（Issue #14/#25）。"""
     if not has_verbal_content(segment.text):
         return False  # 記号のみ＝幻覚（確率と無関係に除去）
+    if config.remove_fillers and is_filler_only(segment.text):
+        return False  # 相槌のみ＝情報量ゼロ（Issue #25）
     if segment.no_speech_prob is not None and segment.avg_logprob is not None:
         # 両シグナルあり（mlx/faster）: 本家Whisper慣例のAND条件
         return not (

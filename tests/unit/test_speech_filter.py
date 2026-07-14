@@ -53,9 +53,9 @@ class TestIsReliableSegment:
         # 判断材料なし＝保持。no_speech単独も保持（AND条件の片翼）。
         # avg_logprob単独の極端な低信頼は除去（whisper.cpp対応、4AIレビューR1）
         config = SpeechFilterConfig()
-        assert is_reliable_segment(_segment("はい"), config) is True
-        assert is_reliable_segment(_segment("はい", no_speech_prob=0.9), config) is True
-        assert is_reliable_segment(_segment("はい", avg_logprob=-1.5), config) is False
+        assert is_reliable_segment(_segment("承知しました"), config) is True
+        assert is_reliable_segment(_segment("承知しました", no_speech_prob=0.9), config) is True
+        assert is_reliable_segment(_segment("承知しました", avg_logprob=-1.5), config) is False
 
     def test_high_no_speech_and_low_logprob_is_rejected(self) -> None:
         segment = _segment("ご視聴ありがとうございました", 0.9, -1.5)
@@ -63,21 +63,21 @@ class TestIsReliableSegment:
 
     def test_high_no_speech_but_good_logprob_is_kept(self) -> None:
         # AND条件: 片側だけでは除去しない（30秒窓共有の正常発話を守る）
-        segment = _segment("はい", 0.9, -0.3)
+        segment = _segment("承知しました", 0.9, -0.3)
         assert is_reliable_segment(segment, SpeechFilterConfig()) is True
 
     def test_low_no_speech_and_low_logprob_is_kept(self) -> None:
-        segment = _segment("はい", 0.3, -1.5)
+        segment = _segment("承知しました", 0.3, -1.5)
         assert is_reliable_segment(segment, SpeechFilterConfig()) is True
 
     def test_exact_thresholds_are_kept(self) -> None:
         # 境界値: ちょうど閾値は保持（本家Whisperの > / < と同じ開区間）
-        segment = _segment("はい", 0.6, -1.0)
+        segment = _segment("承知しました", 0.6, -1.0)
         assert is_reliable_segment(segment, SpeechFilterConfig()) is True
 
     def test_custom_thresholds(self) -> None:
         config = SpeechFilterConfig(no_speech_threshold=0.3, logprob_threshold=-0.5)
-        assert is_reliable_segment(_segment("はい", 0.4, -0.6), config) is False
+        assert is_reliable_segment(_segment("承知しました", 0.4, -0.6), config) is False
 
 
 class TestFilterSegments:
@@ -172,3 +172,63 @@ class TestLogprobOnlySignal:
         )
 
         assert is_reliable_segment(segment, SpeechFilterConfig()) is True
+
+
+class TestFillerOnlyRemoval:
+    """Issue #25: 相槌・つなぎ言葉のみの発話行をカットする。"""
+
+    def _seg(self, text: str):
+        from screen_activity_logger.domain.models import (
+            TranscriptSegment,
+            VideoTimestamp,
+        )
+
+        return TranscriptSegment(
+            start=VideoTimestamp(seconds=0.0),
+            end=VideoTimestamp(seconds=1.0),
+            text=text,
+        )
+
+    def test_filler_only_lines_are_detected(self) -> None:
+        from screen_activity_logger.domain.speech_filter import is_filler_only
+
+        assert is_filler_only("はい") is True
+        assert is_filler_only("えーと") is True
+        assert is_filler_only("はいはい") is True
+        assert is_filler_only("はい、はい。") is True
+        assert is_filler_only("あのー、えっと") is True
+        assert is_filler_only("うーん") is True
+
+    def test_meaningful_lines_are_not_filler(self) -> None:
+        from screen_activity_logger.domain.speech_filter import is_filler_only
+
+        assert is_filler_only("はい、では始めます") is False
+        assert is_filler_only("えーと、これはA案です") is False
+        assert is_filler_only("単価が変わっています") is False
+        assert is_filler_only("") is False  # 空は記号のみ判定の担当
+
+    def test_filter_segments_drops_fillers_by_default(self) -> None:
+        from screen_activity_logger.domain.speech_filter import (
+            SpeechFilterConfig,
+            filter_segments,
+        )
+
+        segments = [self._seg("はい"), self._seg("進捗は8割です"), self._seg("えーと")]
+
+        kept = filter_segments(segments, SpeechFilterConfig())
+
+        assert [s.text for s in kept] == ["進捗は8割です"]
+
+    def test_keep_fillers_config_retains_them(self) -> None:
+        from screen_activity_logger.domain.speech_filter import (
+            SpeechFilterConfig,
+            filter_segments,
+        )
+
+        segments = [self._seg("はい"), self._seg("進捗は8割です")]
+
+        kept = filter_segments(
+            segments, SpeechFilterConfig(remove_fillers=False)
+        )
+
+        assert [s.text for s in kept] == ["はい", "進捗は8割です"]

@@ -34,7 +34,7 @@ PC画面を録画した動画（MP4）を入力に、**完全ローカル**で *
 | **フレーム抽出** | ffmpeg（fps均等サンプリング＋シーン変化検出、長辺1024px縮小） | 視覚トークン超過の実測に基づく |
 | **OCR層** | PaddleOCR PP-OCRv6 tiny/small/medium（日本語、CPU） | 画面差分によるスキップ＋会議モードでキーフレーム限定 |
 | **VLM層** | Qwen3-VL 8B（Ollama / vllm-mlx。**Apple Siliconはvllm-mlx推奨・実測約40倍** #8） | 構造化5フィールド出力・タイムアウト＋リトライ＋テレメトリ・幻覚resource品質ゲート（#15/#17） |
-| **ASR層** | kotoba-whisper v2.0（Mac: whisper.cpp Metal / Windows・Linux: faster-whisper、自動選択） | 日本語特化・無音幻覚フィルタ（#14）。2時間実測でmlx-whisperは品質崩壊のため非推奨化（#22）。音声なしは自動スキップ |
+| **ASR層** | kotoba-whisper v2.0（Mac: whisper.cpp Metal / Windows・Linux: faster-whisper、自動選択） | 日本語特化・無音幻覚フィルタ（#14）・相槌のみの行をカット（#25、--keep-fillersで無効化）。2時間実測でmlx-whisperは品質崩壊のため非推奨化（#22）。音声なしは自動スキップ |
 | **VLMゲート** | OCRトークンJaccard（meetingモード） | 話者切替のVLM無駄撃ちを抑制（3者設計協議で採択、Issue #13） |
 | **出力** | JSONL（機械用・一次情報保持）＋Markdown（人間用） | |
 | **活用層** | Ruri v3 + numpy索引（`sal-search`実装済み） | 意味検索。分類・RAGは将来 |
@@ -94,7 +94,8 @@ ollama pull qwen3-vl:8b
 #   --speech-summary          発話の1文要旨（🧭）を付与（VLMと同一モデル、処理+1割弱、既定OFF）
 #   --asr-no-speech-prob 0.6  ASR幻覚フィルタ閾値（no_speech_prob）
 #   --asr-avg-logprob -1.0    ASR幻覚フィルタ閾値（avg_logprob）
-#   --no-asr-filter           ASR幻覚フィルタを無効化（デバッグ用）
+#   --keep-fillers            相槌のみの発話行（「はい」「えーと」等）を残す（既定はカット）
+#   --no-asr-filter           ASR幻覚フィルタを無効化（デバッグ用。フィラーカットも無効）
 ```
 
 ### モードの使い分け

@@ -215,7 +215,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--no-asr-filter", action="store_true",
-        help="ASR幻覚フィルタを無効化する（デバッグ用）",
+        help="ASR幻覚フィルタを無効化する（デバッグ用。フィラーカットも無効になる）",
+    )
+    parser.add_argument(
+        "--keep-fillers", action="store_true",
+        help="相槌・つなぎ言葉のみの発話行（「はい」「えーと」等）を残す（既定はカット）",
     )
     args = parser.parse_args(argv)
 
@@ -318,6 +322,7 @@ def main(argv: list[str] | None = None) -> int:
                 else SpeechFilterConfig(
                     no_speech_threshold=args.asr_no_speech_prob,
                     logprob_threshold=args.asr_avg_logprob,
+                    remove_fillers=not args.keep_fillers,
                 )
             ),
         )
