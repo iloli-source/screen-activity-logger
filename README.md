@@ -27,13 +27,13 @@ PC画面を録画した動画（MP4）を入力に、**完全ローカル**で *
 
 ## 技術選定サマリ
 
-3AI（Claude / Grok / Codex）調査×5ラウンドで確定したスタック。根拠は [BEST_PRACTICES.md](./BEST_PRACTICES.md)、生データは [docs/research/](./docs/research/)。
+3AI（Claude / Grok / Codex）調査×6ラウンドで確定したスタック。根拠は [BEST_PRACTICES.md](./BEST_PRACTICES.md)、生データは [docs/research/](./docs/research/)。
 
 | 層 | 採用 | 補足 |
 |----|------|------|
 | **フレーム抽出** | ffmpeg（fps均等サンプリング＋シーン変化検出、長辺1024px縮小） | 視覚トークン超過の実測に基づく |
 | **OCR層** | PaddleOCR PP-OCRv6 tiny/small/medium（日本語、CPU） | 画面差分によるスキップ＋会議モードでキーフレーム限定 |
-| **VLM層** | Qwen3-VL:8B（Ollama、タイムアウト＋1回リトライ＋推論テレメトリ） | 構造化5フィールド出力・幻覚resource品質ゲート（#15/#17） |
+| **VLM層** | Qwen3-VL 8B（Ollama / vllm-mlx。**Apple Siliconはvllm-mlx推奨・実測約40倍** #8） | 構造化5フィールド出力・タイムアウト＋リトライ＋テレメトリ・幻覚resource品質ゲート（#15/#17） |
 | **ASR層** | kotoba-whisper v2.0（Mac: whisper.cpp Metal / Windows・Linux: faster-whisper、自動選択） | 日本語特化・無音幻覚フィルタ（#14）。2時間実測でmlx-whisperは品質崩壊のため非推奨化（#22）。音声なしは自動スキップ |
 | **VLMゲート** | OCRトークンJaccard（meetingモード） | 話者切替のVLM無駄撃ちを抑制（3者設計協議で採択、Issue #13） |
 | **出力** | JSONL（機械用・一次情報保持）＋Markdown（人間用） | |
@@ -121,7 +121,9 @@ export OLLAMA_KV_CACHE_TYPE=q8_0  # KVメモリ約半減（品質はq8が無難�
 ```
 
 実測性能（M4 Air）:
-- 画面録画20秒: 約69秒（差分OCRスキップ＋small tier。改善前278秒。ASR追加コストほぼゼロ）
+- 実会議5分クリップ: **約63秒**（vllm-mlxバックエンド＝実時間の2割。Ollamaでは15分〜80分超）
+- **2時間録画: 31分で完走・後半劣化なし**（whisper.cpp ASR＋vllm-mlx、Issue #22で実測検証）
+- 画面録画20秒: 約69秒（Ollama利用時。差分OCRスキップ＋small tier。改善前278秒）
 - 実会議5分クリップ×10本バッチ: 10/10完走（10並列×各自ロードは0/10で破綻＝バッチ2フェーズが必須）
 - VLMタイムアウトのリトライ救済: 劣化環境の実測でタイムアウト4回中3回を救済、説明消失が5件→1件（Issue #15）
 
@@ -174,7 +176,7 @@ docs/research/issue3_quality_improvement.md のQ4。
 
 `--mode meeting --speaker-attribution` で、話者ビューの名前ラベル×シーン変化×ASR時刻の突き合わせにより `🗣️ 秋山: …` の実名付き発話を試みる（追加モデルゼロ）。
 
-**実測済みの限界（Issue #10）**: 話者ビューに追従する録画でのみ有効（precision 62-84%）。ギャラリービューやタイル固定のボット録画では帰属をほぼ棄却する（安全側）が、残る帰属も信頼できないため**既定OFF**。確実な話者分離が必要な場合は音声ベース（pyannote）ハイブリッドの対応を待つこと（Issue #20）。
+**実測済みの限界（Issue #10）**: 話者ビューに追従する録画でのみ有効（precision 62-84%）。ギャラリービューやタイル固定のボット録画では帰属をほぼ棄却する（安全側）が、残る帰属も信頼できないため**既定OFF**。音声ベース（pyannote）ハイブリッドは需要実証・GPU環境を再オープン条件として見送り中（Issue #20参照）。
 
 
 ### VLMバックエンド（vllm-mlx推奨・実測約40倍）
@@ -243,7 +245,7 @@ uv run python -m screen_activity_logger.cli 録画.mp4 -o out/
 - Python 3.12（venvは `uv venv -p 3.12`）
 - ffmpeg（フレーム抽出・音声抽出・ffprobe）
 - Ollama 0.30以降（qwen3-vl:8b）
-- 主要依存: `paddleocr`+`paddlepaddle`（CPU）, `ollama`, `pillow`, （ASR時）whisper.cpp（brew）または `faster-whisper`
+- 主要依存: `paddleocr`+`paddlepaddle`（CPU）, `ollama`, `httpx`, `pillow`, （ASR時）whisper.cpp（brew）または `faster-whisper`
 
 ## プライバシー
 
@@ -255,4 +257,4 @@ uv run python -m screen_activity_logger.cli 録画.mp4 -o out/
 
 ## ライセンス
 
-[Apache-2.0](./LICENSE)（Issue #9で決定）。利用する各モデルのライセンスは個別に確認すること（Qwen系 Apache-2.0、Sarashina Vision MIT、Ruri v3 Apache-2.0）。
+[Apache-2.0](./LICENSE)（Issue #9で決定）。利用する各モデルのライセンスは個別に確認すること（Qwen系 Apache-2.0、kotoba-whisper Apache-2.0、Ruri v3 Apache-2.0）。

@@ -28,7 +28,7 @@ Editing a unit-price cell                            ← action (Qwen3-VL)
 |----|------|------|
 | Frame extraction | ffmpeg (uniform fps + scene detection, long edge 1024px) | |
 | OCR | PaddleOCR PP-OCRv6 tiny/small/medium (Japanese, CPU) | diff-based skipping; keyframes-only in meeting mode |
-| VLM | Qwen3-VL:8B via Ollama (timeout + retry + fallback) | structured 5-field output (app/resource/location/focus/action) |
+| VLM | Qwen3-VL 8B via Ollama or vllm-mlx (**~40x faster on Apple Silicon**, #8) | structured 5-field output (app/resource/location/focus/action), timeout + retry + fallback |
 | ASR | kotoba-whisper v2.0 (macOS: whisper.cpp Metal / Windows & Linux: faster-whisper, auto-selected) | Japanese-specialized; mlx-whisper deprecated after 2-hour tests showed content collapse (#22); silent videos auto-skip |
 | VLM gate | OCR-token Jaccard (meeting mode) | suppresses wasted VLM calls on speaker-view switches |
 | Output | JSONL (machine, keeps raw evidence) + Markdown (human) | includes per-entry dwell time and per-app time summary |
@@ -78,11 +78,23 @@ Then ask Claude Code: "turn this recording into a work log" — it handles prere
 | OCR | all frames (diff-skip) | keyframes only |
 | VLM | every keyframe (never drop a step) | only when on-screen text changes |
 
-Batch multiple videos in one command (two-phase: all ASR first, then per-video OCR/VLM — the ASR model loads once):
+Batch multiple videos in one command (two-phase: all ASR first, then per-video OCR/VLM.
+faster/mlx load the model once; whisper.cpp spawns a lightweight process per video.
+Silent videos are skipped per-video):
 
 ```bash
 .venv/bin/python -m screen_activity_logger.cli mtg1.mp4 mtg2.mp4 --mode meeting -o out/
 ```
+
+## VLM backend: vllm-mlx (recommended on Apple Silicon, ~40x faster)
+
+```bash
+pip install vllm-mlx   # separate venv recommended
+vllm-mlx serve mlx-community/Qwen3-VL-8B-Instruct-4bit --port 8991
+.venv/bin/screen-activity-logger meeting.mp4 --mode meeting --vlm-backend vllm-mlx -o out/
+```
+
+Measured on M4 Air 24GB: a 5-minute meeting clip completes in **~63 seconds** (vs 15-80+ minutes via Ollama), and a **2-hour recording completes in 31 minutes with no late-half quality degradation** (verified end-to-end, Issue #22).
 
 ## Key options
 
@@ -104,7 +116,7 @@ Batch multiple videos in one command (two-phase: all ASR first, then per-video O
 ## Design principles
 
 - **Two-layer separation**: OCR reads text (facts), the VLM explains activity (interpretation). Facts override guesses; raw OCR lines are always preserved in JSONL so any interpretation can be re-derived later.
-- **Ports & adapters**: the domain layer has zero OS/backend branches. Swapping macOS MLX for Windows faster-whisper changes exactly one adapter.
+- **Ports & adapters**: the domain layer has zero OS/backend branches. Swapping macOS whisper.cpp for Windows faster-whisper changes exactly one adapter.
 - **Paid-for computation gets reused**: collapsed duplicate entries become dwell-time tracking; per-app time summaries come for free.
 
 ## Requirements
@@ -119,4 +131,4 @@ Screen recordings may contain passwords and personal data. This tool runs fully 
 
 ## License
 
-[Apache-2.0](./LICENSE). Check individual model licenses separately (Qwen: Apache-2.0, Sarashina Vision: MIT, Ruri v3: Apache-2.0).
+[Apache-2.0](./LICENSE). Check individual model licenses separately (Qwen: Apache-2.0, kotoba-whisper: Apache-2.0, Ruri v3: Apache-2.0).
