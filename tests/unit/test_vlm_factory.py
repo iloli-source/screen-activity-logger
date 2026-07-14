@@ -45,7 +45,14 @@ class TestEnsureBackendAvailable:
         import sys
         import types
 
-        fake = types.SimpleNamespace(list=lambda: {"models": []})
+        class FakeClient:
+            def __init__(self, timeout=None):
+                pass
+
+            def list(self):
+                return {"models": []}
+
+        fake = types.SimpleNamespace(Client=FakeClient)
         monkeypatch.setitem(sys.modules, "ollama", fake)
 
         ensure_backend_available("ollama")  # 例外なし
@@ -54,10 +61,14 @@ class TestEnsureBackendAvailable:
         import sys
         import types
 
-        def fail_list():
-            raise ConnectionError("refused")
+        class FailingClient:
+            def __init__(self, timeout=None):
+                pass
 
-        fake = types.SimpleNamespace(list=fail_list)
+            def list(self):
+                raise ConnectionError("refused")
+
+        fake = types.SimpleNamespace(Client=FailingClient)
         monkeypatch.setitem(sys.modules, "ollama", fake)
 
         import pytest

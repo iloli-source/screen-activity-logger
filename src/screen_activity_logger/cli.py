@@ -109,7 +109,10 @@ def build_use_case(
         speaker_attribution=speaker_attribution,
         # 要旨はVLMと同一バックエンド・モデルを使い回す（追加メモリゼロ、#23）
         speech_summarizer=(
-            create_summarizer(vlm_backend, model, base_url=vlm_url)
+            create_summarizer(
+                vlm_backend, model, base_url=vlm_url,
+                timeout_seconds=vlm_timeout_seconds,
+            )
             if speech_summary
             else None
         ),

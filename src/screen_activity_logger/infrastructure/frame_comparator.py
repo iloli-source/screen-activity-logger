@@ -28,6 +28,16 @@ class PilFrameComparator:
     threshold: float = 0.02
 
     def are_similar(self, a: Frame, b: Frame) -> bool:
+        try:
+            return self._are_similar(a, b)
+        except Exception as error:  # noqa: BLE001 — 比較失敗は安全側（再OCR）へ
+            print(
+                f"フレーム比較失敗（再OCRします）: {type(error).__name__}",
+                flush=True,
+            )
+            return False
+
+    def _are_similar(self, a: Frame, b: Frame) -> bool:
         return self._mean_abs_diff(a, b) < self.threshold
 
     @staticmethod

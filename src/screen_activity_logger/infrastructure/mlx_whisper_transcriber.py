@@ -57,5 +57,8 @@ class MlxWhisperTranscriber:
         import mlx_whisper
 
         return mlx_whisper.transcribe(
-            str(wav_path), path_or_hf_repo=self._model, language="ja"
+            str(wav_path),
+            path_or_hf_repo=self._model,
+            language="ja",
+            condition_on_previous_text=False,  # 幻覚連鎖の抑制（fasterと対称）
         )

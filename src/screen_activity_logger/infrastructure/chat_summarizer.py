@@ -18,12 +18,23 @@ _MAX_TOKENS = 100
 DEFAULT_SUMMARY_TIMEOUT_SECONDS = 60.0
 
 
+def _response_content(response) -> str | None:
+    """ollamaのdict/ChatResponse両形式からcontentを取り出す（describerと同型）。"""
+    if isinstance(response, dict):
+        return response.get("message", {}).get("content")
+    return getattr(getattr(response, "message", None), "content", None)
+
+
 def build_summary_prompt(lines: tuple[str, ...]) -> str:
     return SUMMARY_PROMPT + "\n\n" + "\n".join(lines)
 
 
-def _normalize(content: str) -> str | None:
-    stripped = content.strip()
+def _normalize(content) -> str | None:
+    # message.contentはNoneになり得る。str(None)="None"が要旨として
+    # 出力されるのを防ぐ（4AIレビューR2）
+    if content is None:
+        return None
+    stripped = str(content).strip()
     return stripped or None
 
 
@@ -56,7 +67,7 @@ class OpenAIChatSummarizer:
             timeout=self._timeout_seconds,
         )
         response.raise_for_status()
-        content = str(response.json()["choices"][0]["message"]["content"])
+        content = response.json()["choices"][0]["message"]["content"]
         return _normalize(content)
 
 
@@ -70,16 +81,22 @@ class OllamaChatSummarizer:
     ) -> None:
         self._model = model
         self._timeout_seconds = timeout_seconds
+        self._client = None  # 呼び出し毎の接続生成を避ける（4AIレビューR2）
 
     def summarize(self, lines: tuple[str, ...]) -> str | None:
-        import ollama  # 遅延import（既存流儀）
-
         # 無限待ちで--speech-summaryがバッチを止めないようclientにtimeout
         # を設定する（OpenAI側と対称、4AIレビューR1）
-        client = ollama.Client(timeout=self._timeout_seconds)
-        response = client.chat(
+        response = self._get_client().chat(
             model=self._model,
             messages=[{"role": "user", "content": build_summary_prompt(lines)}],
+            think=False,  # describerと同じくthinking無効（4AIレビューR2）
             options={"temperature": 0, "num_predict": _MAX_TOKENS},
         )
-        return _normalize(str(response["message"]["content"]))
+        return _normalize(_response_content(response))
+
+    def _get_client(self):
+        if self._client is None:
+            import ollama  # 遅延import（既存流儀）
+
+            self._client = ollama.Client(timeout=self._timeout_seconds)
+        return self._client

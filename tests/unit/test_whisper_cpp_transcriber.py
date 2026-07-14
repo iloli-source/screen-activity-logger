@@ -88,7 +88,7 @@ class TestWhisperCppTranscriber:
         def fake_extract(video_path: Path, wav_path: Path) -> None:
             Path(wav_path).write_bytes(b"RIFF-fake")
 
-        def fake_run(cmd, check, capture_output, timeout=None):
+        def fake_run(cmd, check, capture_output, timeout=None, text=False):
             calls.append([str(part) for part in cmd])
             out_prefix = cmd[cmd.index("-of") + 1]
             Path(f"{out_prefix}.json").write_text(

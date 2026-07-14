@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import math
-import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -19,6 +18,7 @@ from typing import Any
 from screen_activity_logger.domain.models import TranscriptSegment
 from screen_activity_logger.infrastructure.asr_segments import build_segment
 from screen_activity_logger.infrastructure.audio_extraction import extract_audio_wav
+from screen_activity_logger.infrastructure.subprocess_runner import run_captured
 
 DEFAULT_CPP_BINARY = "whisper-cli"
 DEFAULT_CPP_ASR_MODEL_PATH = (
@@ -60,7 +60,9 @@ def _avg_logprob_from_tokens(tokens) -> float | None:
     probs = [
         float(tok["p"])
         for tok in tokens
-        if tok.get("p") and not str(tok.get("text", "")).startswith("[_")
+        if tok.get("p") is not None
+        and float(tok["p"]) > 0  # log定義域ガード（4AIレビューR2）
+        and not str(tok.get("text", "")).startswith("[_")
     ]
     if not probs:
         return None
@@ -86,7 +88,7 @@ class WhisperCppTranscriber:
         return segments_from_cpp_json(payload)
 
     def _run_whisper_cli(self, wav_path: Path, output_prefix: Path) -> Any:
-        subprocess.run(
+        run_captured(
             [
                 self._binary,
                 "-m", str(self._model_path),
@@ -95,9 +97,7 @@ class WhisperCppTranscriber:
                 "-ojf",  # full JSON（トークン確率つき）
                 "-of", str(output_prefix),
             ],
-            check=True,
-            capture_output=True,
-            timeout=WHISPER_CLI_TIMEOUT_SECONDS,
+            timeout_seconds=WHISPER_CLI_TIMEOUT_SECONDS,
         )
         json_path = output_prefix.with_suffix(".json")
         return json.loads(json_path.read_text(encoding="utf-8"))

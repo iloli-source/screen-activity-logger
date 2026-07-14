@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from screen_activity_logger.domain.models import Frame, VideoTimestamp
+from screen_activity_logger.infrastructure.subprocess_runner import run_captured
 
 _PTS_TIME_PATTERN = re.compile(r"pts_time:([0-9]+(?:\.[0-9]+)?)")
 
@@ -41,7 +42,7 @@ def has_audio_stream(video_path: Path) -> bool:
     """
     try:
         return _probe_audio_stream(video_path)
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+    except RuntimeError as error:
         print(
             f"音声トラック判定に失敗（ASRスキップ扱い） {video_path.name}:"
             f" {type(error).__name__}",
@@ -51,7 +52,7 @@ def has_audio_stream(video_path: Path) -> bool:
 
 
 def _probe_audio_stream(video_path: Path) -> bool:
-    result = subprocess.run(
+    result = run_captured(
         [
             "ffprobe", "-v", "error",
             "-select_streams", "a",
@@ -59,10 +60,8 @@ def _probe_audio_stream(video_path: Path) -> bool:
             "-of", "csv=p=0",
             str(video_path),
         ],
-        check=True,
-        capture_output=True,
+        timeout_seconds=FFPROBE_TIMEOUT_SECONDS,
         text=True,
-        timeout=FFPROBE_TIMEOUT_SECONDS,
     )
     return parse_audio_stream_presence(result.stdout)
 
@@ -99,30 +98,26 @@ class FfmpegFrameExtractor:
         pattern = self.workdir / "frame_%06d.png"
         # scale: 長辺がmax_long_edgeを超える場合のみ縮小（拡大はしない）。-2は偶数丸め
         scale = f"scale='min({self.max_long_edge},iw)':-2"
-        subprocess.run(
+        run_captured(
             [
                 "ffmpeg", "-y", "-i", str(video_path),
                 "-vf", f"fps={self.fps},{scale}",
                 str(pattern),
             ],
-            check=True,
-            capture_output=True,
-            timeout=FFMPEG_PASS_TIMEOUT_SECONDS,
+            timeout_seconds=FFMPEG_PASS_TIMEOUT_SECONDS,
         )
         return tuple(sorted(self.workdir.glob("frame_*.png")))
 
     def _detect_scene_changes(self, video_path: Path) -> tuple[float, ...]:
-        result = subprocess.run(
+        result = run_captured(
             [
                 "ffmpeg", "-i", str(video_path),
                 "-vf", f"select='gt(scene,{self.scene_threshold})',showinfo",
                 "-fps_mode", "vfr",
                 "-f", "null", "-",
             ],
-            check=True,
-            capture_output=True,
+            timeout_seconds=FFMPEG_PASS_TIMEOUT_SECONDS,
             text=True,
-            timeout=FFMPEG_PASS_TIMEOUT_SECONDS,
         )
         return parse_scene_timestamps(result.stderr)
 

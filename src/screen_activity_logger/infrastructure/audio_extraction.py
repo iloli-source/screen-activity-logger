@@ -7,8 +7,9 @@ ffmpegのPATH解決・エラー挙動も両者で完全に揃う（Windows対応
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
+
+from screen_activity_logger.infrastructure.subprocess_runner import run_captured
 
 # 3時間級入力の実測（2時間で数分）から十分な余裕を持たせた上限。
 # 無制限だとffmpegハングでバッチ全体が永久停止する（4AIレビューR1）
@@ -25,9 +26,7 @@ def ffmpeg_wav_command(video_path: Path, wav_path: Path) -> list[str]:
 
 
 def extract_audio_wav(video_path: Path, wav_path: Path) -> None:
-    subprocess.run(
+    run_captured(
         ffmpeg_wav_command(video_path, wav_path),
-        check=True,
-        capture_output=True,
-        timeout=FFMPEG_TIMEOUT_SECONDS,
+        timeout_seconds=FFMPEG_TIMEOUT_SECONDS,
     )

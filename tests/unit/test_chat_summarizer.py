@@ -57,8 +57,10 @@ class TestOllamaChatSummarizer:
             def __init__(self, timeout=None):
                 calls_meta.append(timeout)
 
-            def chat(self, model, messages, options=None):
-                calls.append({"model": model, "messages": messages})
+            def chat(self, model, messages, think=None, options=None):
+                calls.append(
+                    {"model": model, "messages": messages, "think": think}
+                )
                 return {"message": {"content": "要旨文"}}
 
         calls_meta: list = []
@@ -74,3 +76,4 @@ class TestOllamaChatSummarizer:
         assert SUMMARY_PROMPT in call["messages"][0]["content"]
         assert result == "要旨文"
         assert calls_meta == [60.0]  # 無限待ち防止のtimeout（4AIレビューR1）
+        assert call["think"] is False  # thinking無効（describerと対称、4AIレビューR2）

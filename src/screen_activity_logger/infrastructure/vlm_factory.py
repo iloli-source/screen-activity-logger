@@ -39,9 +39,8 @@ def create_describer(
     if backend == "ollama":
         return OllamaSceneDescriber(model=model, timeout_seconds=timeout_seconds)
     if backend == "vllm-mlx":
-        resolved_model = DEFAULT_VLLM_MODEL if ":" in model else model
         return OpenAIChatSceneDescriber(
-            model=resolved_model,
+            model=_resolve_vllm_model(model),
             base_url=base_url,
             timeout_seconds=timeout_seconds,
         )
@@ -55,7 +54,8 @@ def ensure_backend_available(backend: str, base_url: str = DEFAULT_VLLM_URL) -> 
         import ollama
 
         try:
-            ollama.list()
+            # 到達性チェック自体がハングしないよう短いtimeout（4AIレビューR2）
+            ollama.Client(timeout=5.0).list()
         except Exception as error:  # noqa: BLE001
             raise ValueError(
                 f"Ollamaサーバーに接続できません: {type(error).__name__}。"
@@ -80,14 +80,26 @@ def create_summarizer(
     backend: str,
     model: str,
     base_url: str = DEFAULT_VLLM_URL,
+    timeout_seconds: float | None = None,
 ) -> SpeechSummarizer:
     """VLMと同一バックエンド・モデルで発話要旨アダプタを生成する（Issue #23）。
 
     モデル名の読み替え規則はcreate_describerと同一（挙動差の排除）。
+    timeout_seconds未指定時はアダプタ既定（60s）。
     """
+    kwargs = {} if timeout_seconds is None else {"timeout_seconds": timeout_seconds}
     if backend == "ollama":
-        return OllamaChatSummarizer(model=model)
+        return OllamaChatSummarizer(model=model, **kwargs)
     if backend == "vllm-mlx":
-        resolved_model = DEFAULT_VLLM_MODEL if ":" in model else model
-        return OpenAIChatSummarizer(model=resolved_model, base_url=base_url)
+        return OpenAIChatSummarizer(
+            model=_resolve_vllm_model(model), base_url=base_url, **kwargs
+        )
     raise ValueError(f"未知のVLMバックエンド: {backend}")
+
+
+def _resolve_vllm_model(model: str) -> str:
+    """Ollamaタグ形式（qwen3-vl:8b）のみMLX既定へ読み替える。
+
+    HF形式（org/name。リビジョン等でコロンを含み得る）は素通し（4AIレビューR2）。
+    """
+    return DEFAULT_VLLM_MODEL if (":" in model and "/" not in model) else model
