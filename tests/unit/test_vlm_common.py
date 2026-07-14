@@ -50,3 +50,19 @@ class TestParseFields:
 
         assert fields["action"] == "画面を確認しています"
         assert fields["app_guess"] is None
+
+
+class TestBuildPromptQualityCriteria:
+    """Issue #24: プロンプトに品質基準（対象読者・文体）が含まれる。"""
+
+    def test_prompt_defines_reader_and_style(self) -> None:
+        from screen_activity_logger.domain.models import OcrText, VideoTimestamp
+        from screen_activity_logger.infrastructure.vlm_common import build_prompt
+
+        prompt = build_prompt(
+            OcrText(timestamp=VideoTimestamp(seconds=0.0), lines=())
+        )
+
+        assert "後から読み返して作業内容を思い出せ" in prompt  # 本人視点の品質基準
+        assert "第三者が業務の流れを追える" in prompt  # 第三者視点の品質基準
+        assert "常体" in prompt  # 文体統一の指示
