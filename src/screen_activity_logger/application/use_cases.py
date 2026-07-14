@@ -72,6 +72,7 @@ class GenerateWorklog:
     speech_filter: SpeechFilterConfig | None = None
     speaker_attribution: SpeakerAttributionConfig | None = None
     speech_summarizer: SpeechSummarizer | None = None
+    frame_export_dir: Path | None = None  # キーフレーム画像の保存先（Issue #27）
 
     def execute(
         self,
@@ -119,7 +120,42 @@ class GenerateWorklog:
             ocr_texts=ocr_by_frame.values(),
             transcript_segments=sorted_segments,
         )
+        worklog = self._attach_frame_images(worklog, frames)
         return self._attach_summaries(worklog)
+
+    def _attach_frame_images(
+        self, worklog: Worklog, frames: Sequence[Frame]
+    ) -> Worklog:
+        """エントリに対応するキーフレーム画像を保存先へコピーする（Issue #27）。
+
+        画像は補助情報のため、コピー失敗はエントリを損なわず警告のみで継続
+        （要旨と同方針）。相対パス（frames/…）で参照し、出力Markdownの隣に置く。
+        """
+        if self.frame_export_dir is None:
+            return worklog
+        path_by_timestamp = {frame.timestamp: frame.path for frame in frames}
+        self.frame_export_dir.mkdir(parents=True, exist_ok=True)
+        entries = []
+        for entry in worklog.entries:
+            source = path_by_timestamp.get(entry.timestamp)
+            relative = None
+            if source is not None:
+                name = f"frame_{str(entry.timestamp).replace(':', '')}.png"
+                try:
+                    import shutil
+
+                    shutil.copyfile(source, self.frame_export_dir / name)
+                    relative = f"{self.frame_export_dir.name}/{name}"
+                except OSError as error:
+                    print(
+                        f"画像保存失敗 t={entry.timestamp}:"
+                        f" {type(error).__name__}: {error}",
+                        flush=True,
+                    )
+            entries.append(
+                replace(entry, frame_image=relative) if relative else entry
+            )
+        return Worklog.from_entries(entries)
 
     def _attach_summaries(self, worklog: Worklog) -> Worklog:
         """発話リッチなエントリに1文要旨を付与する（Issue #23、オプトイン）。

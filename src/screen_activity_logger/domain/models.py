@@ -110,6 +110,7 @@ class WorklogEntry:
     focus: str | None = None
     end_timestamp: VideoTimestamp | None = None
     summary: str | None = None  # 発話の1文要旨（オプトイン、Issue #23）
+    frame_image: str | None = None  # キーフレーム画像の相対パス（オプトイン、Issue #27）
 
     @property
     def duration_seconds(self) -> float | None:

@@ -120,5 +120,5 @@ class TestPipelineEndToEnd:
         )
         assert set(first.keys()) == {
             "t", "t_end", "duration_seconds", "app_guess", "resource",
-            "location", "focus", "ocr", "speech", "summary", "action",
+            "location", "focus", "ocr", "speech", "summary", "frame", "action",
         }

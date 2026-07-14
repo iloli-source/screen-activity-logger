@@ -61,6 +61,7 @@ class JsonlWorklogWriter:
             "ocr": list(entry.ocr_lines),
             "speech": list(entry.speech),
             "summary": entry.summary,
+            "frame": entry.frame_image,
             "action": entry.action,
         }
         return json.dumps(payload, ensure_ascii=False)
@@ -110,6 +111,9 @@ class MarkdownWorklogWriter:
             ):
                 heading += f"（{entry.location}）"
         body = [heading, ""]
+        if entry.frame_image:
+            body.append(f"![{entry.timestamp}]({entry.frame_image})")
+            body.append("")
         if entry.summary:
             body.append(f"🧭 {entry.summary}")
             body.append("")

@@ -53,6 +53,7 @@ class TestJsonlWorklogWriter:
             "ocr": ["pytest", "FAILED test_auth.py"],
             "speech": [],
             "summary": None,
+            "frame": None,
             "action": "テスト失敗箇所をエディタで確認している",
         }
 
@@ -270,3 +271,29 @@ class TestSummaryOutput:
         assert "🧭" not in md_path.read_text(encoding="utf-8")
         payload = json.loads(jsonl_path.read_text(encoding="utf-8").strip())
         assert payload["summary"] is None
+
+
+class TestFrameImageOutput:
+    """Issue #27: frame_imageのMarkdown/JSONL出力。"""
+
+    def test_markdown_embeds_image_after_heading(self, tmp_path) -> None:
+        from screen_activity_logger.domain.models import (
+            VideoTimestamp,
+            Worklog,
+            WorklogEntry,
+        )
+
+        entry = WorklogEntry(
+            timestamp=VideoTimestamp(seconds=5.0),
+            action="セルを編集している",
+            app_guess="Excel",
+            ocr_lines=(),
+            frame_image="frames/frame_000005.png",
+        )
+        path = tmp_path / "w.md"
+
+        MarkdownWorklogWriter().write(Worklog.from_entries([entry]), path)
+
+        text = path.read_text(encoding="utf-8")
+        assert "![00:00:05](frames/frame_000005.png)" in text
+        assert text.index("![") < text.index("セルを編集している")

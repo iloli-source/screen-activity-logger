@@ -69,6 +69,7 @@ def build_use_case(
     ocr_tolerance_seconds: float,
     workdir: Path,
     ocr_tier: str = DEFAULT_OCR_TIER,
+    frame_export_dir: Path | None = None,
     diff_threshold: float = DEFAULT_DIFF_THRESHOLD,
     asr_model: str | None = None,
     ocr_keyframes_only: bool = False,
@@ -108,6 +109,7 @@ def build_use_case(
         speech_filter=speech_filter,
         speaker_attribution=speaker_attribution,
         # 要旨はVLMと同一バックエンド・モデルを使い回す（追加メモリゼロ、#23）
+        frame_export_dir=frame_export_dir,
         speech_summarizer=(
             create_summarizer(
                 vlm_backend, model, base_url=vlm_url,
@@ -190,6 +192,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--vlm-timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS,
         help="VLM呼び出しの試行毎タイムアウト秒（タイムアウト時は1回リトライ、既定: 300）",
+    )
+    parser.add_argument(
+        "--save-frames", action="store_true",
+        help="エントリ対応のキーフレーム画像を <出力先>/frames/ に保存しMarkdownに埋め込む"
+        "（機密画面の生画像が成果物に残るため既定OFF）",
     )
     parser.add_argument(
         "--speech-summary", action="store_true",
@@ -296,6 +303,12 @@ def main(argv: list[str] | None = None) -> int:
             vlm_backend=args.vlm_backend,
             vlm_url=args.vlm_url,
             speech_summary=args.speech_summary,
+            # バッチは動画毎サブディレクトリ配下に frames/ を置くため単発のみここで指定
+            frame_export_dir=(
+                args.output_dir / "frames"
+                if args.save_frames and len(args.videos) == 1
+                else None
+            ),
             ocr_keyframes_only=(args.mode == "meeting"),
             # 実測（Issue #10）でボット録画はタイル固定が多く前提が崩れるため
             # 既定OFFのオプトイン（話者ビュー追従録画でのみ有効な実験的機能）
