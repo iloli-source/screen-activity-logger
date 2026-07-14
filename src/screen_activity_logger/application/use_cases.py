@@ -228,12 +228,30 @@ class GenerateWorklog:
     ) -> dict[VideoTimestamp, OcrText]:
         return {
             frame.timestamp: (
-                self.text_recognizer.recognize(frame)
+                self._safe_recognize(frame)
+                or OcrText(timestamp=frame.timestamp, lines=())
                 if frame.is_keyframe
                 else OcrText(timestamp=frame.timestamp, lines=())
             )
             for frame in frames
         }
+
+    def _safe_recognize(self, frame: Frame) -> OcrText | None:
+        """OCRをフレーム単位で保護する。None＝失敗（「文字なし」と区別）。
+
+        差分スキップのキャッシュに失敗結果を載せると空OCRが後続の類似
+        フレームへ伝播するため、呼び出し側で区別できるようNoneを返す
+        （4AIレビューR2）。
+        """
+        try:
+            return self.text_recognizer.recognize(frame)
+        except Exception as error:  # noqa: BLE001 — 1フレームの失敗でバッチを止めない
+            print(
+                f"OCR失敗 t={frame.timestamp}:"
+                f" {type(error).__name__}: {error}",
+                flush=True,
+            )
+            return None
 
     def _recognize_with_skip(
         self, frames: Sequence[Frame]
@@ -243,9 +261,14 @@ class GenerateWorklog:
         last_lines: tuple[str, ...] = ()
         for frame in frames:
             if self._should_recognize(frame, last_recognized):
-                ocr = self.text_recognizer.recognize(frame)
-                last_recognized = frame
-                last_lines = ocr.lines
+                recognized = self._safe_recognize(frame)
+                if recognized is None:
+                    # 失敗はキャッシュに載せない（次フレームで再OCRさせる）
+                    ocr = OcrText(timestamp=frame.timestamp, lines=())
+                else:
+                    ocr = recognized
+                    last_recognized = frame
+                    last_lines = ocr.lines
             else:
                 ocr = OcrText(timestamp=frame.timestamp, lines=last_lines)
             ocr_by_frame[frame.timestamp] = ocr

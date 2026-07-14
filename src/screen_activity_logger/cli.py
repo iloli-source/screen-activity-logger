@@ -233,11 +233,6 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         parser.error(str(exc))
     asr_backend = resolve_backend(args.asr_backend)
-    if not args.no_asr:
-        try:
-            ensure_backend_available(asr_backend)
-        except ValueError as exc:
-            parser.error(str(exc))
     asr_model: str | None = (
         None if args.no_asr else (args.asr_model or default_model_for(asr_backend))
     )
@@ -246,6 +241,13 @@ def main(argv: list[str] | None = None) -> int:
     if asr_model and not any(has_audio_stream(v) for v in args.videos):
         print("全動画に音声トラックなし → 音声認識をスキップします")
         asr_model = None
+    # 導入チェックはASRを実際に使うときだけ（全無音の録画で
+    # ASRバックエンド必須にしない、4AIレビューR2の順序バグ修正）
+    if asr_model is not None:
+        try:
+            ensure_backend_available(asr_backend)
+        except ValueError as exc:
+            parser.error(str(exc))
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="sal-frames-") as tmp:
