@@ -107,7 +107,7 @@ class OpenAIChatSceneDescriber:
         )
 
     def _post_chat(self, payload: dict[str, Any]) -> str:
-        import httpx  # 遅延import（ollamaの依存として既に存在）
+        import httpx  # 遅延import（直接依存として宣言済み、4AIレビューR1）
 
         response = httpx.post(
             f"{self._base_url}/chat/completions",

@@ -33,7 +33,11 @@ class IndexWorklogs:
             for position, record in enumerate(self.read_records(path)):
                 documents.append(
                     build_search_document(
-                        record, source=source, doc_id=f"{source}:{position}"
+                        record,
+                        source=source,
+                        # 同一親ディレクトリの複数jsonlでも衝突しない
+                        # ようファイル名を含める（4AIレビューR2）
+                        doc_id=f"{source}/{path.name}:{position}",
                     )
                 )
         vectors = self.embedder.embed_documents([doc.text for doc in documents])

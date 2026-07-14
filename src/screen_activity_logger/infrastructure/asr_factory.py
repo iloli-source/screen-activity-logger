@@ -18,6 +18,7 @@ import shutil
 from pathlib import Path
 
 from screen_activity_logger.application.ports import SpeechTranscriber
+from screen_activity_logger.domain.models import TranscriptSegment
 from screen_activity_logger.infrastructure.faster_whisper_transcriber import (
     DEFAULT_FASTER_ASR_MODEL,
     FasterWhisperTranscriber,
@@ -149,7 +150,7 @@ class SilenceAwareTranscriber:
         self._inner = inner
         self._has_audio = has_audio
 
-    def transcribe(self, video_path: Path) -> tuple:
+    def transcribe(self, video_path: Path) -> tuple[TranscriptSegment, ...]:
         if not self._has_audio(video_path):
             print(f"音声トラックなし → ASRスキップ: {video_path.name}", flush=True)
             return ()

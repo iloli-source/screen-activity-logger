@@ -115,7 +115,7 @@ class TestIndexWorklogs:
         assert index.saved_dir == tmp_path / "index"
         # sourceは親ディレクトリ名、doc_idは連番
         assert index._documents[0].source == "видео_a"
-        assert index._documents[2].doc_id == "video_b:0"
+        assert index._documents[2].doc_id == "video_b/worklog.jsonl:0"
 
 
 class TestSearchWorklogs:

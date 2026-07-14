@@ -47,6 +47,15 @@ def format_hit(rank: int, hit: SearchHit) -> str:
     )
 
 
+def _run_with_friendly_errors(func) -> int:
+    """索引未作成・モデル不一致等の想定内エラーをtracebackなしで表示する。"""
+    try:
+        return func()
+    except (FileNotFoundError, ValueError) as error:
+        print(f"エラー: {error}", flush=True)
+        return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="sal-search",

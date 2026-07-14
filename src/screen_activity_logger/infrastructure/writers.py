@@ -92,6 +92,8 @@ class MarkdownWorklogWriter:
     @staticmethod
     def _to_section(entry: WorklogEntry) -> str:
         duration = entry.duration_seconds
+        # duration 0は「観測が過去のみ」の丸め（Issue #18）で、0秒表示はノイズの
+        # ため見出しに終端を出さない（4AIレビューR2の指摘は意図的設計として棄却）
         if entry.end_timestamp is not None and duration:
             heading = (
                 f"## {entry.timestamp}〜{entry.end_timestamp}"

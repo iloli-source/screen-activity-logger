@@ -81,6 +81,11 @@ class NumpyVectorIndex:
             .splitlines()
             if line.strip()
         )
+        if len(self._vectors) != len(self._documents):
+            raise ValueError(
+                f"索引が壊れています: vectors {len(self._vectors)}行 vs "
+                f"documents {len(self._documents)}件。sal-search index で再作成してください"
+            )
 
     @property
     def model_name(self) -> str | None:

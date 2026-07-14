@@ -157,7 +157,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--asr-model", default=None,
         help="音声認識モデル（未指定時はバックエンド既定: "
-        f"mlx={DEFAULT_ASR_MODEL} / faster={DEFAULT_FASTER_ASR_MODEL}）",
+        "cpp=~/.cache/screen-activity-logger/kotoba-whisper-v2.0-q5_0.bin / "
+        f"faster={DEFAULT_FASTER_ASR_MODEL} / mlx={DEFAULT_ASR_MODEL}）",
     )
     parser.add_argument(
         "--no-asr", action="store_true", help="音声認識を無効化する"
@@ -223,6 +224,20 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(f"動画が見つかりません: {video}")
     if args.fps <= 0:
         parser.error(f"--fps は正の値が必要です: {args.fps}")
+    for name, value in (
+        ("--scene-threshold", args.scene_threshold),
+        ("--diff-threshold", args.diff_threshold),
+        ("--vlm-skip-threshold", args.vlm_skip_threshold),
+    ):
+        if not 0.0 <= value <= 1.0:
+            parser.error(f"{name} は0〜1で指定してください: {value}")
+    if args.vlm_timeout <= 0:
+        parser.error(f"--vlm-timeout は正の値が必要です: {args.vlm_timeout}")
+    if args.vlm_min_gap > args.vlm_max_gap:
+        parser.error(
+            f"--vlm-min-gap ({args.vlm_min_gap}) は --vlm-max-gap"
+            f" ({args.vlm_max_gap}) 以下にしてください"
+        )
     # パイプライン深部で素のFileNotFoundErrorにしない（4AIレビューR1）
     import shutil as _shutil
     for binary in ("ffmpeg", "ffprobe"):
