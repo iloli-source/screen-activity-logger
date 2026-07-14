@@ -263,7 +263,14 @@ def main(argv: list[str] | None = None) -> int:
     # ASRバックエンド必須にしない、4AIレビューR2の順序バグ修正）
     if asr_model is not None:
         try:
-            ensure_backend_available(asr_backend)
+            # cppは--asr-modelで任意GGUFを指定できるため、preflightにも
+            # 実際に使うパスを渡す（既定パスだけ見て誤検知しない、4AIレビューR3）
+            ensure_backend_available(
+                asr_backend,
+                cpp_model_path=(
+                    Path(asr_model) if asr_backend == "cpp" else None
+                ),
+            )
         except ValueError as exc:
             parser.error(str(exc))
 

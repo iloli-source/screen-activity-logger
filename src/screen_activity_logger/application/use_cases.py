@@ -324,6 +324,13 @@ class BatchGenerateWorklog:
                 worklog = self.use_case.execute(
                     video, precomputed_segments=segments_by_video[video]
                 )
+                # 出力（mkdir/write）失敗も動画単位で隔離する。ここが
+                # try外だと重い解析成功後のI/O失敗で残り全動画が未処理になる
+                # （4AIレビューR3）
+                video_out = output_dir / video.stem
+                video_out.mkdir(parents=True, exist_ok=True)
+                for writer, filename in self.writers:
+                    writer.write(worklog, video_out / filename)
             except Exception as error:  # noqa: BLE001 — 動画単位で隔離
                 print(
                     f"処理失敗（スキップ） {video.name}:"
@@ -331,10 +338,6 @@ class BatchGenerateWorklog:
                     flush=True,
                 )
                 continue
-            video_out = output_dir / video.stem
-            video_out.mkdir(parents=True, exist_ok=True)
-            for writer, filename in self.writers:
-                writer.write(worklog, video_out / filename)
             results.append((video, worklog))
         return results
 

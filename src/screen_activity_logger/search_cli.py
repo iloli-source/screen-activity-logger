@@ -86,21 +86,29 @@ def main(argv: list[str] | None = None) -> int:
         for path in args.jsonl:
             if not path.exists():
                 parser.error(f"ファイルが見つかりません: {path}")
-        count = build_index_use_case(model=args.model).execute(
-            args.jsonl, index_dir=args.index_dir
+
+        def run_index() -> int:
+            count = build_index_use_case(model=args.model).execute(
+                args.jsonl, index_dir=args.index_dir
+            )
+            print(f"索引を作成しました: {count}件 → {args.index_dir}")
+            return 0
+
+        return _run_with_friendly_errors(run_index)
+
+    def run_query() -> int:
+        hits = build_query_use_case(model=args.model).execute(
+            args.text, index_dir=args.index_dir, k=args.k
         )
-        print(f"索引を作成しました: {count}件 → {args.index_dir}")
+        if not hits:
+            print("該当なし")
+            return 0
+        for rank, hit in enumerate(hits, start=1):
+            print(format_hit(rank, hit))
         return 0
 
-    hits = build_query_use_case(model=args.model).execute(
-        args.text, index_dir=args.index_dir, k=args.k
-    )
-    if not hits:
-        print("該当なし")
-        return 0
-    for rank, hit in enumerate(hits, start=1):
-        print(format_hit(rank, hit))
-    return 0
+    # 索引未作成・モデル不一致は生tracebackにしない（4AIレビューR3で未配線を検出）
+    return _run_with_friendly_errors(run_query)
 
 
 if __name__ == "__main__":

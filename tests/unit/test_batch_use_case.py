@@ -75,3 +75,44 @@ class TestBatchRobustness:
         assert len(results) == 1  # ASR失敗でも画像解析は続行
         assert received["v.mp4"] == ()
         assert "ASR失敗" in capsys.readouterr().out
+
+
+class TestWriterFailureIsolation:
+    """4AIレビューR3: 出力I/O失敗も動画単位で隔離される。"""
+
+    def test_writer_failure_skips_video_and_continues(self, tmp_path, capsys) -> None:
+        from screen_activity_logger.application.use_cases import (
+            BatchGenerateWorklog,
+        )
+        from screen_activity_logger.domain.models import Worklog
+
+        class OkUseCase:
+            def execute(self, video, precomputed_segments=None):
+                return Worklog.from_entries([])
+
+        class FlakyWriter:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def write(self, worklog, output_path):
+                self.calls += 1
+                if self.calls == 1:
+                    raise PermissionError("disk full")
+
+        class NullTranscriber:
+            def transcribe(self, video_path):
+                return ()
+
+        writer = FlakyWriter()
+        batch = BatchGenerateWorklog(
+            transcriber=NullTranscriber(),
+            use_case=OkUseCase(),
+            writers=[(writer, "worklog.jsonl")],
+        )
+        v1 = tmp_path / "v1.mp4"
+        v2 = tmp_path / "v2.mp4"
+
+        results = batch.execute([v1, v2], output_dir=tmp_path / "out")
+
+        assert [v.name for v, _ in results] == ["v2.mp4"]  # v1のI/O失敗を隔離
+        assert "処理失敗" in capsys.readouterr().out
