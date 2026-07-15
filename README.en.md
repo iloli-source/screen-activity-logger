@@ -126,9 +126,22 @@ Measured on M4 Air 24GB: a 5-minute meeting clip completes in **~63 seconds** (v
 
 ## Requirements
 
-- Python 3.12, ffmpeg, Ollama ≥ 0.30 (qwen3-vl:8b)
+- Python 3.12, ffmpeg, Ollama ≥ 0.30 (qwen3-vl:8b) or vllm-mlx
 - macOS (Apple Silicon), Windows, or Linux
-- ~16GB RAM recommended for the 8B VLM
+- **~16GB RAM recommended** (the 4-bit 8B VLM uses 6–8GB during inference; developed on 24GB)
+
+### First-run model downloads (~8GB total, one-time, free)
+
+All inference runs locally, so models must be fetched once (offline afterwards, no API fees):
+
+| Model | Role | Size | How |
+|---|---|---|---|
+| Qwen3-VL 8B (VLM/LMM) | screen understanding | **~6GB** | `ollama pull qwen3-vl:8b`, or auto on first vllm-mlx start |
+| PaddleOCR (Japanese) | on-screen text | a few hundred MB | auto on first run |
+| kotoba-whisper | speech recognition | 0.5–1.5GB | auto (faster-whisper) / manual GGUF for whisper.cpp |
+
+For low-spec machines, **Qwen3-VL 4B (~3GB, 1.7x faster, comparable quality on meeting frames)** works:
+`--model mlx-community/Qwen3-VL-4B-Instruct-4bit` (vllm-mlx). See docs/research/issue2_tuning_results.md.
 
 ## Privacy
 

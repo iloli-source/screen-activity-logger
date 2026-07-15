@@ -261,8 +261,22 @@ uv run python -m screen_activity_logger.cli 録画.mp4 -o out/
 
 - Python 3.12（venvは `uv venv -p 3.12`）
 - ffmpeg（フレーム抽出・音声抽出・ffprobe）
-- Ollama 0.30以降（qwen3-vl:8b）
+- Ollama 0.30以降（qwen3-vl:8b）または vllm-mlx
 - 主要依存: `paddleocr`+`paddlepaddle`（CPU）, `ollama`, `httpx`, `pillow`, （ASR時）whisper.cpp（brew）または `faster-whisper`
+
+### 初回モデルダウンロード（合計 約8GB・一度きり・無料）
+
+推論はすべてローカルで動くため、**初回にモデルの取得が必要**（以降はオフラインで動作、API課金なし）:
+
+| モデル | 役割 | サイズ | 取得 |
+|---|---|---|---|
+| Qwen3-VL 8B（VLM/LMM） | 画面の解釈 | **約6GB** | `ollama pull qwen3-vl:8b` またはvllm-mlx初回起動時に自動 |
+| PaddleOCR 日本語 | 画面の文字 | 数百MB | 初回実行時に自動 |
+| kotoba-whisper | 音声認識 | 0.5〜1.5GB | faster版は自動 / whisper.cpp版は手動配置（上記ASRセットアップ） |
+
+**メモリ要件: 実質16GB RAM以上を推奨**（8B-4bitの推論に6〜8GB使用。開発実測は24GB）。
+低スペック機・軽量セットアップには **Qwen3-VL 4B（約3GB、実測1.7倍速・会議画面では品質同等）** が使える:
+`--model mlx-community/Qwen3-VL-4B-Instruct-4bit`（vllm-mlx）/ 実測は docs/research/issue2_tuning_results.md 参照。
 
 ## プライバシー
 
