@@ -255,3 +255,61 @@ class TestDwellTimeWiring:
         assert entry.end_timestamp is not None
         assert entry.end_timestamp.seconds == 30.0  # 最終観測まで
         assert entry.duration_seconds == 20.0
+
+
+class TestStageParallelism:
+    """Issue #29 P3: ASRが抽出+OCRと並行して走る。"""
+
+    def test_asr_overlaps_with_extraction_and_ocr(self, tmp_path) -> None:
+        import time
+
+        timeline: list[tuple[str, float]] = []
+
+        class SlowTranscriber:
+            def transcribe(self, video_path):
+                timeline.append(("asr_start", time.monotonic()))
+                time.sleep(0.15)
+                timeline.append(("asr_end", time.monotonic()))
+                return ()
+
+        class SlowExtractor:
+            def extract(self, video_path):
+                timeline.append(("extract_start", time.monotonic()))
+                time.sleep(0.1)
+                timeline.append(("extract_end", time.monotonic()))
+                png = tmp_path / "f.png"
+                png.write_bytes(b"png")
+                return (
+                    Frame(
+                        timestamp=VideoTimestamp(seconds=0.0),
+                        path=png,
+                        is_keyframe=True,
+                    ),
+                )
+
+        class Recognizer:
+            def recognize(self, frame):
+                timeline.append(("ocr", time.monotonic()))
+                return OcrText(timestamp=frame.timestamp, lines=())
+
+        class Describer:
+            def describe(self, frame, ocr, speech=()):
+                return ActivityDescription(
+                    timestamp=frame.timestamp, action="作業", app_guess=None
+                )
+
+        use_case = GenerateWorklog(
+            frame_extractor=SlowExtractor(),
+            text_recognizer=Recognizer(),
+            scene_describer=Describer(),
+            merger=TimelineMerger(ocr_match_tolerance_seconds=1.0),
+            speech_transcriber=SlowTranscriber(),
+        )
+
+        use_case.execute(Path("/tmp/v.mp4"))
+
+        events = dict(timeline)
+        # ASRは抽出完了を待たずに開始している（並行の証明）
+        assert events["asr_start"] < events["extract_end"]
+        # OCRはASR完了前に走っている（直列ならasr_end後になる）
+        assert events["ocr"] < events["asr_end"]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Sequence
@@ -80,24 +81,33 @@ class GenerateWorklog:
         precomputed_segments: Sequence[TranscriptSegment] | None = None,
     ) -> Worklog:
         """precomputed_segments指定時はtranscriberを呼ばずそれを使う（2フェーズ用）。"""
-        frames = self.frame_extractor.extract(video_path)
-        if not frames:
-            # 空worklogを黙って出すとASR結果ごと消える（4AIレビューR2）
-            raise ValueError(
-                f"フレームを1枚も抽出できませんでした: {video_path}"
-                "（動画が破損しているか、対応していない形式の可能性）"
+        # ASR（音声のみ・GPU）は抽出+OCR（CPU）と依存がないため並行実行する
+        # （Issue #29。VLMは両方の結果をプロンプトに使うため合流後）。
+        # ASRとVLMの同時実行はGPU競合・熱制限（#22実測）のため構造上発生しない
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            asr_future = (
+                pool.submit(self._transcribe, video_path)
+                if precomputed_segments is None
+                else None
             )
-        segments = (
-            precomputed_segments
-            if precomputed_segments is not None
-            else self._transcribe(video_path)
-        )
+            frames = self.frame_extractor.extract(video_path)
+            if not frames:
+                # 空worklogを黙って出すとASR結果ごと消える（4AIレビューR2）
+                raise ValueError(
+                    f"フレームを1枚も抽出できませんでした: {video_path}"
+                    "（動画が破損しているか、対応していない形式の可能性）"
+                )
+            ocr_by_frame = self._recognize_frames(frames)
+            segments = (
+                precomputed_segments
+                if asr_future is None
+                else asr_future.result()
+            )
         # 単発・バッチ両経路のチョークポイントで幻覚フィルタを適用（Issue #14）
         if self.speech_filter is not None:
             segments = filter_segments(segments, self.speech_filter)
         # 発話はここで1回だけソートする（キーフレーム毎の再ソート排除、4AIレビューR1）
         sorted_segments = sorted(segments, key=lambda s: s.start)
-        ocr_by_frame = self._recognize_frames(frames)
         if self.speaker_attribution is not None:
             sorted_segments = attribute_speakers(
                 sorted_segments,
