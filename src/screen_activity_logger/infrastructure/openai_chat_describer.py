@@ -44,10 +44,12 @@ class OpenAIChatSceneDescriber:
         self._model = model
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
+        self._warmed = False
 
     def describe(
         self, frame: Frame, ocr: OcrText, speech: tuple[str, ...] = ()
     ) -> ActivityDescription:
+        self._ensure_warm()
         image_b64 = base64.b64encode(Path(frame.path).read_bytes()).decode()
         payload = {
             "model": self._model,
@@ -88,6 +90,15 @@ class OpenAIChatSceneDescriber:
                     action=f"（VLM呼び出し失敗: {type(error).__name__}）",
                     app_guess=None,
                 )
+            if not (content or "").strip() and attempt < MAX_ATTEMPTS:
+                # コールドスタート直後はHTTP成功でもcontent空が返ることがある
+                # （Issue #28の実測）。第二防衛線としてリトライする
+                print(
+                    f"VLM空応答（リトライ） t={frame.timestamp}"
+                    f" attempt={attempt}/{MAX_ATTEMPTS}",
+                    flush=True,
+                )
+                continue
             elapsed = time.monotonic() - started
             slow = " SLOW" if elapsed > SLOW_CALL_THRESHOLD_SECONDS else ""
             print(
@@ -105,6 +116,30 @@ class OpenAIChatSceneDescriber:
             location=fields["location"],
             focus=fields["focus"],
         )
+
+    def _ensure_warm(self) -> None:
+        """初回呼び出し前にサーバーを温める（Issue #28）。
+
+        起動直後の初回リクエストはHTTP成功でもcontent空が返ることがある
+        （コールドスタート中の応答）。Ollamaアダプタの_ensure_warmと対称。
+        失敗しても本処理へ進む（本処理側のリトライが最終防衛線）。
+        """
+        if self._warmed:
+            return
+        self._warmed = True
+        try:
+            self._post_chat({
+                "model": self._model,
+                "messages": [{"role": "user", "content": "ok"}],
+                "temperature": 0,
+                "max_tokens": 8,
+            })
+        except Exception as error:  # noqa: BLE001
+            print(
+                f"VLMウォームアップ失敗（本処理は継続）:"
+                f" {type(error).__name__}: {error}",
+                flush=True,
+            )
 
     def _post_chat(self, payload: dict[str, Any]) -> str:
         import httpx  # 遅延import（直接依存として宣言済み、4AIレビューR1）
