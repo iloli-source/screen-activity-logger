@@ -58,10 +58,12 @@ class FasterWhisperTranscriber:
         model: str = DEFAULT_FASTER_ASR_MODEL,
         device: str = "auto",
         compute_type: str = "auto",
+        num_workers: int = 1,
     ) -> None:
         self._model = model
         self._device = device
         self._compute_type = compute_type
+        self._num_workers = max(1, num_workers)  # 並列transcribe用（Issue #29）
         self._loaded_model: Any = None
 
     def transcribe(self, video_path: Path) -> tuple[TranscriptSegment, ...]:
@@ -72,12 +74,25 @@ class FasterWhisperTranscriber:
             # 一時ディレクトリ内で消費し切る（遅延ジェネレータ対策）
             return segments_from_faster_segments(raw_segments)
 
+    def transcribe_wav(self, wav_path: Path) -> tuple[TranscriptSegment, ...]:
+        """wav1個の転写（チャンク分割ASR用、Issue #29）。
+
+        CTranslate2モデルはスレッドセーフで、num_workers>1なら複数スレッド
+        からの同時transcribeを実並列で処理する（モデルは1つを共有）。
+        """
+        return segments_from_faster_segments(self._run_whisper(wav_path))
+
     def _run_whisper(self, wav_path: Path) -> Any:
         if self._loaded_model is None:
             from faster_whisper import WhisperModel  # 遅延import（mlx版と同方針）
 
             self._loaded_model = WhisperModel(
-                self._model, device=self._device, compute_type=self._compute_type
+                self._model,
+                device=self._device,
+                compute_type=self._compute_type,
+                # チャンク並列時に複数スレッドからのtranscribeを実並列で
+                # 処理する（CTranslate2のinter_threads。モデルは1つを共有）
+                num_workers=self._num_workers,
             )
         raw_segments, _info = self._loaded_model.transcribe(
             str(wav_path),

@@ -87,6 +87,12 @@ class WhisperCppTranscriber:
             payload = self._run_whisper_cli(wav_path, Path(tmp) / "out")
         return segments_from_cpp_json(payload)
 
+    def transcribe_wav(self, wav_path: Path) -> tuple[TranscriptSegment, ...]:
+        """wav1個の転写（チャンク分割ASR用、Issue #29）。"""
+        with tempfile.TemporaryDirectory(prefix="sal-cpp-out-") as tmp:
+            payload = self._run_whisper_cli(wav_path, Path(tmp) / "out")
+        return segments_from_cpp_json(payload)
+
     def _run_whisper_cli(self, wav_path: Path, output_prefix: Path) -> Any:
         run_captured(
             [

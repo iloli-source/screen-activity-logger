@@ -105,21 +105,48 @@ class TestEnsureBackendAvailable:
 
 
 class TestCreateTranscriber:
-    def test_creates_mlx_transcriber(self) -> None:
-        transcriber = create_transcriber("mlx", "some/model")
-        assert isinstance(transcriber, MlxWhisperTranscriber)
+    def test_wraps_in_chunked_transcriber_by_default(self) -> None:
+        from screen_activity_logger.infrastructure.chunked_transcriber import (
+            ChunkedTranscriber,
+        )
 
-    def test_creates_faster_transcriber(self) -> None:
         transcriber = create_transcriber("faster", "some/model")
-        assert isinstance(transcriber, FasterWhisperTranscriber)
 
-    def test_creates_cpp_transcriber(self, tmp_path) -> None:
-        transcriber = create_transcriber("cpp", str(tmp_path / "model.bin"))
-        assert isinstance(transcriber, WhisperCppTranscriber)
+        assert isinstance(transcriber, ChunkedTranscriber)
+        assert isinstance(transcriber._inner, FasterWhisperTranscriber)
+
+    def test_chunking_disabled_returns_raw_adapter(self, tmp_path) -> None:
+        assert isinstance(
+            create_transcriber("mlx", "some/model", chunk_seconds=0),
+            MlxWhisperTranscriber,
+        )
+        assert isinstance(
+            create_transcriber("cpp", str(tmp_path / "m.bin"), chunk_seconds=0),
+            WhisperCppTranscriber,
+        )
 
     def test_unknown_backend_raises(self) -> None:
         with pytest.raises(ValueError):
             create_transcriber("unknown", "m")
+
+
+class TestDefaultAsrWorkers:
+    def test_gpu_backends_are_serial(self) -> None:
+        from screen_activity_logger.infrastructure.asr_factory import (
+            default_asr_workers,
+        )
+
+        assert default_asr_workers("cpp", cpu_count=10) == 1
+        assert default_asr_workers("mlx", cpu_count=10) == 1
+
+    def test_faster_scales_with_cores_capped_at_4(self) -> None:
+        from screen_activity_logger.infrastructure.asr_factory import (
+            default_asr_workers,
+        )
+
+        assert default_asr_workers("faster", cpu_count=4) == 2
+        assert default_asr_workers("faster", cpu_count=16) == 4
+        assert default_asr_workers("faster", cpu_count=1) == 1
 
 
 class TestSilenceAwareTranscriber:

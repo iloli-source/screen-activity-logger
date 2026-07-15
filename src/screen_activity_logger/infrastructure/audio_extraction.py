@@ -30,3 +30,35 @@ def extract_audio_wav(video_path: Path, wav_path: Path) -> None:
         ffmpeg_wav_command(video_path, wav_path),
         timeout_seconds=FFMPEG_TIMEOUT_SECONDS,
     )
+
+
+def extract_audio_wav_span(
+    video_path: Path, wav_path: Path, start_seconds: float, duration_seconds: float
+) -> None:
+    """指定区間の16kHzモノラルwavを抽出する（チャンク分割ASR用、Issue #29）。"""
+    run_captured(
+        [
+            "ffmpeg", "-y",
+            "-ss", f"{start_seconds:.3f}",
+            "-t", f"{duration_seconds:.3f}",
+            "-i", str(video_path),
+            "-vn", "-ac", "1", "-ar", "16000",
+            str(wav_path),
+        ],
+        timeout_seconds=FFMPEG_TIMEOUT_SECONDS,
+    )
+
+
+def audio_duration_seconds(video_path: Path) -> float:
+    """メディアの長さ（秒）をffprobeで取得する。"""
+    result = run_captured(
+        [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "csv=p=0",
+            str(video_path),
+        ],
+        timeout_seconds=60.0,
+        text=True,
+    )
+    return float(result.stdout.strip())

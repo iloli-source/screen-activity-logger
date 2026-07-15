@@ -53,6 +53,10 @@ class MlxWhisperTranscriber:
             result = self._run_whisper(wav_path)
         return segments_from_result(result)
 
+    def transcribe_wav(self, wav_path: Path) -> tuple[TranscriptSegment, ...]:
+        """wav1個の転写（チャンク分割ASR用、Issue #29）。"""
+        return segments_from_result(self._run_whisper(wav_path))
+
     def _run_whisper(self, wav_path: Path) -> Any:
         import mlx_whisper
 

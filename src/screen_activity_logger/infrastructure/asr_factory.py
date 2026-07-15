@@ -17,8 +17,16 @@ import platform
 import shutil
 from pathlib import Path
 
+import os
+
 from screen_activity_logger.application.ports import SpeechTranscriber
 from screen_activity_logger.domain.models import TranscriptSegment
+from screen_activity_logger.infrastructure.audio_chunking import (
+    DEFAULT_CHUNK_SECONDS,
+)
+from screen_activity_logger.infrastructure.chunked_transcriber import (
+    ChunkedTranscriber,
+)
 from screen_activity_logger.infrastructure.faster_whisper_transcriber import (
     DEFAULT_FASTER_ASR_MODEL,
     FasterWhisperTranscriber,
@@ -122,15 +130,45 @@ def _ensure_cpp_available(model_path: Path | None) -> None:
         )
 
 
-def create_transcriber(backend: str, model: str) -> SpeechTranscriber:
-    """解決済みバックエンドからアダプタを生成する（import自体は遅延のまま）。"""
+def default_asr_workers(backend: str, cpu_count: int | None = None) -> int:
+    """チャンク並列度の既定値（Issue #29）。
+
+    GPU系（cpp/mlx）は1固定: 同一GPUの時分割は効果が薄く、ファンレス機の
+    熱制限リスク（#22実測）だけが乗る。CPU系（faster）はコアが余るため並列。
+    """
+    if backend != "faster":
+        return 1
+    cores = cpu_count if cpu_count is not None else (os.cpu_count() or 2)
+    return max(1, min(4, cores // 2))
+
+
+def create_transcriber(
+    backend: str,
+    model: str,
+    chunk_seconds: float = DEFAULT_CHUNK_SECONDS,
+    max_workers: int | None = None,
+) -> SpeechTranscriber:
+    """解決済みバックエンドからアダプタを生成する（import自体は遅延のまま）。
+
+    chunk_seconds > 0 ならChunkedTranscriberで包む（長時間の頑健性＋
+    fasterのCPU並列）。0で従来どおりの一括転写。
+    """
+    workers = (
+        default_asr_workers(backend) if max_workers is None else max(1, max_workers)
+    )
     if backend == "mlx":
-        return MlxWhisperTranscriber(model=model)
-    if backend == "faster":
-        return FasterWhisperTranscriber(model=model)
-    if backend == "cpp":
-        return WhisperCppTranscriber(model_path=model)
-    raise ValueError(f"未知のASRバックエンド: {backend}")
+        inner: SpeechTranscriber = MlxWhisperTranscriber(model=model)
+    elif backend == "faster":
+        inner = FasterWhisperTranscriber(model=model, num_workers=workers)
+    elif backend == "cpp":
+        inner = WhisperCppTranscriber(model_path=model)
+    else:
+        raise ValueError(f"未知のASRバックエンド: {backend}")
+    if chunk_seconds <= 0:
+        return inner
+    return ChunkedTranscriber(
+        inner, chunk_seconds=chunk_seconds, max_workers=workers
+    )
 
 
 class SilenceAwareTranscriber:

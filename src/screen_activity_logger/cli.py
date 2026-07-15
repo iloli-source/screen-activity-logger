@@ -79,6 +79,8 @@ def build_use_case(
     vlm_gate: VlmGateConfig | None = None,
     speech_filter: SpeechFilterConfig | None = None,
     asr_backend: str = "faster",  # 非推奨mlxを既定にしない（4AIレビューR1）
+    asr_chunk_seconds: float = 1800.0,
+    asr_workers: int | None = None,
     vlm_timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     speaker_attribution: SpeakerAttributionConfig | None = None,
     vlm_backend: str = "ollama",
@@ -105,7 +107,12 @@ def build_use_case(
         merger=TimelineMerger(ocr_match_tolerance_seconds=ocr_tolerance_seconds),
         frame_comparator=PilFrameComparator(threshold=diff_threshold),
         speech_transcriber=(
-            create_transcriber(asr_backend, asr_model) if asr_model else None
+            create_transcriber(
+                asr_backend, asr_model,
+                chunk_seconds=asr_chunk_seconds, max_workers=asr_workers,
+            )
+            if asr_model
+            else None
         ),
         ocr_keyframes_only=ocr_keyframes_only,
         vlm_gate=vlm_gate,
@@ -167,6 +174,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--no-asr", action="store_true", help="音声認識を無効化する"
+    )
+    parser.add_argument(
+        "--asr-chunk-minutes", type=float, default=30.0,
+        help="ASRのチャンク分割長（分）。長時間の頑健性とCPU並列に効く。0で無効（既定: 30）",
+    )
+    parser.add_argument(
+        "--asr-workers", type=int, default=0,
+        help="チャンク転写の並列度（0=自動: faster=コア数に応じて最大4 / cpp・mlx=1）",
     )
     parser.add_argument(
         "--mode", choices=["screencast", "meeting"], default="screencast",
@@ -308,6 +323,8 @@ def main(argv: list[str] | None = None) -> int:
             # （二重生成の排除、4AIレビューR1）
             asr_model=asr_model if len(args.videos) == 1 else None,
             asr_backend=asr_backend,
+            asr_chunk_seconds=args.asr_chunk_minutes * 60.0,
+            asr_workers=args.asr_workers or None,
             vlm_timeout_seconds=args.vlm_timeout,
             vlm_backend=args.vlm_backend,
             vlm_url=args.vlm_url,
@@ -355,7 +372,9 @@ def main(argv: list[str] | None = None) -> int:
             )
         else:
             _run_batch(
-                use_case, args.videos, args.output_dir, asr_model, asr_backend
+                use_case, args.videos, args.output_dir, asr_model, asr_backend,
+                asr_chunk_seconds=args.asr_chunk_minutes * 60.0,
+                asr_workers=args.asr_workers or None,
             )
     return 0
 
@@ -384,6 +403,8 @@ def _run_batch(
     output_dir: Path,
     asr_model: str | None,
     asr_backend: str = "faster",  # 非推奨mlxを既定にしない（4AIレビューR1）
+    asr_chunk_seconds: float = 1800.0,
+    asr_workers: int | None = None,
 ) -> None:
     if asr_model is None:
         # ASRなしでも2フェーズ構造は維持（Phase Aが空になるだけ）
@@ -391,7 +412,10 @@ def _run_batch(
     else:
         # 無音動画は動画単位でスキップ（他の動画のASRは生きる）
         transcriber = SilenceAwareTranscriber(
-            create_transcriber(asr_backend, asr_model)
+            create_transcriber(
+                asr_backend, asr_model,
+                chunk_seconds=asr_chunk_seconds, max_workers=asr_workers,
+            )
         )
     batch = BatchGenerateWorklog(
         transcriber=transcriber,

@@ -77,3 +77,93 @@ class TestMergeChunkedSegments:
         ])
 
         assert [s.text for s in merged] == ["冒頭"]
+
+
+class TestChunkedTranscriber:
+    """I/O部（Issue #29 P2）: チャンク転写の統率。ffmpeg/ffprobeはフェイク。"""
+
+    def _make(self, monkeypatch, duration, max_workers=2):
+        from screen_activity_logger.infrastructure import chunked_transcriber as ct
+
+        extracted: list[tuple[float, float]] = []
+        monkeypatch.setattr(ct, "audio_duration_seconds", lambda video: duration)
+
+        def fake_extract_span(video, wav, start, dur):
+            extracted.append((start, dur))
+            wav.write_bytes(b"wav")
+
+        monkeypatch.setattr(ct, "extract_audio_wav_span", fake_extract_span)
+
+        class FakeInner:
+            def __init__(self):
+                self.wav_calls = 0
+
+            def transcribe_wav(self, wav_path):
+                self.wav_calls += 1
+                # 各チャンク相対時刻のセグメントを返す
+                return (_seg(1.0, 2.0, f"c{self.wav_calls}"),)
+
+            def transcribe(self, video_path):
+                return (_seg(0.5, 1.0, "single"),)
+
+        inner = FakeInner()
+        transcriber = ct.ChunkedTranscriber(
+            inner, chunk_seconds=1800.0, overlap_seconds=10.0,
+            max_workers=max_workers,
+        )
+        return transcriber, inner, extracted
+
+    def test_short_video_delegates_to_inner(self, monkeypatch, tmp_path) -> None:
+        transcriber, inner, extracted = self._make(monkeypatch, duration=600.0)
+
+        segments = transcriber.transcribe(tmp_path / "v.mp4")
+
+        assert [s.text for s in segments] == ["single"]
+        assert extracted == []  # チャンク抽出なし＝従来経路
+
+    def test_long_video_is_chunked_and_offsets_applied(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        transcriber, inner, extracted = self._make(monkeypatch, duration=3900.0)
+
+        segments = transcriber.transcribe(tmp_path / "v.mp4")
+
+        assert inner.wav_calls == 3
+        assert [(s, d) for s, d in extracted] == [
+            (0.0, 1800.0), (1790.0, 1810.0), (3590.0, 310.0),
+        ]
+        # 相対1.0秒 → media_start加算で絶対時刻に（チャンク2は1791.0、3は3591.0）。
+        # lead-in帰属規則: 1791.0 < 1800.0 と 3591.0 < 3600.0 は破棄される
+        assert [s.start.seconds for s in segments] == [1.0]
+
+    def test_chunk_failure_falls_back_to_empty_chunk(
+        self, monkeypatch, tmp_path, capsys
+    ) -> None:
+        from screen_activity_logger.infrastructure import chunked_transcriber as ct
+
+        monkeypatch.setattr(ct, "audio_duration_seconds", lambda video: 3900.0)
+
+        def fake_extract_span(video, wav, start, dur):
+            wav.write_bytes(b"wav")
+
+        monkeypatch.setattr(ct, "extract_audio_wav_span", fake_extract_span)
+
+        class FlakyInner:
+            def __init__(self):
+                self.calls = 0
+
+            def transcribe_wav(self, wav_path):
+                self.calls += 1
+                if self.calls == 2:
+                    raise RuntimeError("chunk boom")
+                return (_seg(20.0, 21.0, f"c{self.calls}"),)
+
+        transcriber = ct.ChunkedTranscriber(
+            FlakyInner(), chunk_seconds=1800.0, overlap_seconds=10.0, max_workers=1
+        )
+
+        segments = transcriber.transcribe(tmp_path / "v.mp4")
+
+        # 失敗チャンクは空として続行（他チャンクの結果は生きる）
+        assert len(segments) == 2
+        assert "チャンク転写失敗" in capsys.readouterr().out
