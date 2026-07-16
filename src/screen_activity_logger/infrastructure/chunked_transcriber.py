@@ -56,7 +56,7 @@ class ChunkedTranscriber:
             return tuple(self._inner.transcribe(video_path))
         with tempfile.TemporaryDirectory(prefix="sal-chunks-") as tmp:
             wav_paths = []
-            for index, (_, media_start, media_duration) in enumerate(spans):
+            for index, (_, _, media_start, media_duration) in enumerate(spans):
                 wav = Path(tmp) / f"chunk_{index:03d}.wav"
                 extract_audio_wav_span(video_path, wav, media_start, media_duration)
                 wav_paths.append(wav)
@@ -67,9 +67,9 @@ class ChunkedTranscriber:
         return merge_chunked_segments(results)
 
     def _transcribe_chunk(
-        self, span: tuple[float, float, float], wav_path: Path
-    ) -> tuple[float, tuple[TranscriptSegment, ...]]:
-        chunk_start, media_start, _ = span
+        self, span: tuple[float, float, float, float], wav_path: Path
+    ) -> tuple[float, float, tuple[TranscriptSegment, ...]]:
+        chunk_start, chunk_end, media_start, _ = span
         try:
             relative = self._inner.transcribe_wav(wav_path)
         except Exception as error:  # noqa: BLE001 — 1チャンクの失敗で全体を止めない
@@ -78,7 +78,7 @@ class ChunkedTranscriber:
                 f" {type(error).__name__}: {error}",
                 flush=True,
             )
-            return (chunk_start, ())
+            return (chunk_start, chunk_end, ())
         absolute = tuple(
             replace(
                 seg,
@@ -87,4 +87,4 @@ class ChunkedTranscriber:
             )
             for seg in relative
         )
-        return (chunk_start, absolute)
+        return (chunk_start, chunk_end, absolute)

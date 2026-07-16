@@ -25,35 +25,36 @@ class TestChunkSpans:
     def test_short_audio_is_single_span(self) -> None:
         spans = chunk_spans(600.0, chunk_seconds=1800.0, overlap_seconds=10.0)
 
-        assert spans == ((0.0, 0.0, 600.0),)
+        assert spans == ((0.0, 600.0, 0.0, 600.0),)
 
-    def test_long_audio_gets_leadin_overlap(self) -> None:
-        # 3900秒を1800秒チャンクで3分割。先頭以外はlead-in 10秒つきで読む
+    def test_long_audio_gets_overlap_on_both_sides(self) -> None:
+        # 3900秒を1800秒チャンクで3分割。境界をまたぐ発話の尻切れを防ぐため
+        # lead-in（前方）とlead-out（後方）の両側にオーバーラップを付ける
         spans = chunk_spans(3900.0, chunk_seconds=1800.0, overlap_seconds=10.0)
 
         assert spans == (
-            (0.0, 0.0, 1800.0),
-            (1800.0, 1790.0, 1810.0),
-            (3600.0, 3590.0, 310.0),  # 残り300秒＋lead-in 10秒
+            (0.0, 1800.0, 0.0, 1810.0),          # 末尾+10秒のlead-out
+            (1800.0, 3600.0, 1790.0, 1820.0),    # 両側+10秒
+            (3600.0, 3900.0, 3590.0, 310.0),     # 残り300秒＋lead-in
         )
 
     def test_zero_chunk_seconds_disables_chunking(self) -> None:
         spans = chunk_spans(7200.0, chunk_seconds=0.0, overlap_seconds=10.0)
 
-        assert spans == ((0.0, 0.0, 7200.0),)
+        assert spans == ((0.0, 7200.0, 0.0, 7200.0),)
 
     def test_exact_multiple_has_no_empty_tail(self) -> None:
         spans = chunk_spans(3600.0, chunk_seconds=1800.0, overlap_seconds=10.0)
 
         assert len(spans) == 2
-        assert spans[-1] == (1800.0, 1790.0, 1810.0)
+        assert spans[-1] == (1800.0, 3600.0, 1790.0, 1810.0)
 
 
 class TestMergeChunkedSegments:
     def test_concatenates_in_time_order(self) -> None:
         merged = merge_chunked_segments([
-            (0.0, (_seg(5.0, 8.0, "前半"),)),
-            (1800.0, (_seg(1802.0, 1804.0, "後半"),)),
+            (0.0, 1800.0, (_seg(5.0, 8.0, "前半"),)),
+            (1800.0, 3600.0, (_seg(1802.0, 1804.0, "後半"),)),
         ])
 
         assert [s.text for s in merged] == ["前半", "後半"]
@@ -62,8 +63,8 @@ class TestMergeChunkedSegments:
     def test_leadin_duplicates_are_dropped(self) -> None:
         # 第2チャンクのlead-in領域（start < 1800）は前チャンク帰属として破棄
         merged = merge_chunked_segments([
-            (0.0, (_seg(1795.0, 1799.0, "前チャンク側"),)),
-            (1800.0, (
+            (0.0, 1800.0, (_seg(1795.0, 1799.0, "前チャンク側"),)),
+            (1800.0, 3600.0, (
                 _seg(1796.0, 1799.5, "lead-in重複"),
                 _seg(1801.0, 1805.0, "本体"),
             )),
@@ -71,9 +72,26 @@ class TestMergeChunkedSegments:
 
         assert [s.text for s in merged] == ["前チャンク側", "本体"]
 
+    def test_leadout_duplicates_are_dropped(self) -> None:
+        # 第1チャンクのlead-out領域（start >= 1800）は次チャンク帰属として破棄。
+        # 境界をまたぐ発話（start < 1800）は第1チャンクがlead-outのおかげで
+        # 尻切れせず完全なテキストを持つ（E2E実測で境界毎に-80〜-160字の
+        # 欠落が出た問題の修正）
+        merged = merge_chunked_segments([
+            (0.0, 1800.0, (
+                _seg(1795.0, 1806.0, "境界をまたぐ発話の完全版"),
+                _seg(1802.0, 1808.0, "lead-out側の次チャンク発話"),
+            )),
+            (1800.0, 3600.0, (
+                _seg(1802.0, 1808.0, "本体"),
+            )),
+        ])
+
+        assert [s.text for s in merged] == ["境界をまたぐ発話の完全版", "本体"]
+
     def test_first_chunk_keeps_everything(self) -> None:
         merged = merge_chunked_segments([
-            (0.0, (_seg(0.0, 2.0, "冒頭"),)),
+            (0.0, 1800.0, (_seg(0.0, 2.0, "冒頭"),)),
         ])
 
         assert [s.text for s in merged] == ["冒頭"]
@@ -130,7 +148,7 @@ class TestChunkedTranscriber:
 
         assert inner.wav_calls == 3
         assert [(s, d) for s, d in extracted] == [
-            (0.0, 1800.0), (1790.0, 1810.0), (3590.0, 310.0),
+            (0.0, 1810.0), (1790.0, 1820.0), (3590.0, 310.0),
         ]
         # 相対1.0秒 → media_start加算で絶対時刻に（チャンク2は1791.0、3は3591.0）。
         # lead-in帰属規則: 1791.0 < 1800.0 と 3591.0 < 3600.0 は破棄される
