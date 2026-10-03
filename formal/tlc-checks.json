@@ -1,0 +1,41 @@
+{
+  "root": ".",
+  "concurrency": 2,
+  "checks": [
+    {
+      "spec": "IndexSave.tla",
+      "config": "IndexSaveBug.cfg",
+      "expect": { "kind": "invariant-violation", "name": "LoadedIndexIsConsistent" }
+    },
+    {
+      "spec": "IndexSave.tla",
+      "config": "IndexSaveInPlaceChecksumBug.cfg",
+      "expect": { "kind": "invariant-violation", "name": "LoadedIndexIsConsistent" }
+    },
+    {
+      "spec": "IndexSave.tla",
+      "config": "IndexSaveInPlaceLosesIndexBug.cfg",
+      "expect": { "kind": "invariant-violation", "name": "CommittedGenerationIsComplete" }
+    },
+    {
+      "spec": "IndexSave.tla",
+      "config": "IndexSaveFixed.cfg",
+      "expect": { "kind": "pass" }
+    },
+    {
+      "spec": "IndexSave.tla",
+      "config": "IndexSaveFixedLegacy.cfg",
+      "expect": { "kind": "pass" }
+    },
+    {
+      "spec": "ModelInit.tla",
+      "config": "ModelInitBug.cfg",
+      "expect": { "kind": "invariant-violation", "name": "AtMostOneLoad" }
+    },
+    {
+      "spec": "ModelInit.tla",
+      "config": "ModelInitFixed.cfg",
+      "expect": { "kind": "pass" }
+    }
+  ]
+}
