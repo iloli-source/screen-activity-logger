@@ -36,6 +36,10 @@ outputs/
 models/
 .cache/
 
+# --- TLCの生成物（formal/README.md）---
+formal/states/
+formal/**/*_TTrace_*
+
 # --- OS / エディタ ---
 .DS_Store
 Thumbs.db

@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from screen_activity_logger.domain.models import Worklog, WorklogEntry
+from screen_activity_logger.infrastructure.atomic_write import atomic_write_text
 
 _TITLE_MAX_CHARS = 40
 _SENTENCE_SEPARATOR = "。"
@@ -47,7 +48,7 @@ class ManualMarkdownWriter:
             for number, entry in enumerate(worklog.entries, start=1)
         ]
         text = f"# {self._source_name} 手順書\n\n" + "\n".join(sections)
-        output_path.write_text(text, encoding="utf-8")
+        atomic_write_text(output_path, text)
 
     @staticmethod
     def _to_step(number: int, entry: WorklogEntry) -> str:
