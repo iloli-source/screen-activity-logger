@@ -7,6 +7,7 @@ from pathlib import Path
 
 from screen_activity_logger.domain.models import Worklog, WorklogEntry
 from screen_activity_logger.domain.services import aggregate_durations_by_app
+from screen_activity_logger.infrastructure.atomic_write import atomic_write_text
 
 # 全角括弧・空白を正規化して包含判定する（Issue #17 S4の表示ガード）
 _NORMALIZE_TABLE = str.maketrans({"（": "(", "）": ")", "　": " "})
@@ -42,7 +43,7 @@ class JsonlWorklogWriter:
 
     def write(self, worklog: Worklog, output_path: Path) -> None:
         lines = (self._to_json(entry) for entry in worklog.entries)
-        output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        atomic_write_text(output_path, "\n".join(lines) + "\n")
 
     @staticmethod
     def _to_json(entry: WorklogEntry) -> str:
@@ -76,7 +77,7 @@ class MarkdownWorklogWriter:
         summary = self._app_summary(worklog)
         if summary:
             text += summary
-        output_path.write_text(text, encoding="utf-8")
+        atomic_write_text(output_path, text)
 
     @staticmethod
     def _app_summary(worklog: Worklog) -> str:
