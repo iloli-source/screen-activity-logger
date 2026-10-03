@@ -25,6 +25,10 @@ from screen_activity_logger.infrastructure.audio_extraction import (
 )
 
 
+# (チャンク開始秒, 終了秒, セグメント列)。転写に失敗したチャンクはNone
+_ChunkResult = tuple[float, float, tuple[TranscriptSegment, ...] | None]
+
+
 class WavTranscriber(Protocol):
     """wavファイル1個を転写できるASRアダプタ。"""
 
@@ -64,11 +68,15 @@ class ChunkedTranscriber:
                 results = list(
                     pool.map(self._transcribe_chunk, spans, wav_paths)
                 )
-        return merge_chunked_segments(results)
+        _report_failed_chunks(results)
+        return merge_chunked_segments(
+            [(start, end, segments or ()) for start, end, segments in results]
+        )
 
     def _transcribe_chunk(
         self, span: tuple[float, float, float, float], wav_path: Path
-    ) -> tuple[float, float, tuple[TranscriptSegment, ...]]:
+    ) -> _ChunkResult:
+        """1チャンクを転写する。失敗時のセグメントはNone（発話なしの()と区別）。"""
         chunk_start, chunk_end, media_start, _ = span
         try:
             relative = self._inner.transcribe_wav(wav_path)
@@ -78,7 +86,7 @@ class ChunkedTranscriber:
                 f" {type(error).__name__}: {error}",
                 flush=True,
             )
-            return (chunk_start, chunk_end, ())
+            return (chunk_start, chunk_end, None)
         absolute = tuple(
             replace(
                 seg,
@@ -88,3 +96,25 @@ class ChunkedTranscriber:
             for seg in relative
         )
         return (chunk_start, chunk_end, absolute)
+
+
+def _report_failed_chunks(results: Sequence[_ChunkResult]) -> None:
+    """失敗チャンクの欠落区間をまとめて知らせる（Issue #32）。
+
+    失敗チャンクは空として続行するため、出力だけ見ると「その区間は発話なし」
+    と区別できない。件数と区間を最後に1回出し、欠落に気付けるようにする。
+    """
+    failed = [(start, end) for start, end, segments in results if segments is None]
+    if not failed:
+        return
+    ranges = "、".join(
+        f"{VideoTimestamp(seconds=start)}〜{VideoTimestamp(seconds=end)}"
+        for start, end in failed
+    )
+    message = (
+        f"警告: ASRは{len(results)}チャンク中{len(failed)}チャンクの転写に失敗しました。"
+        f"該当区間の発話はログから欠落します: {ranges}"
+    )
+    if len(failed) == len(results):
+        message += "（発話は1件も取得できていません。ASRの設定・モデルを確認してください）"
+    print(message, flush=True)

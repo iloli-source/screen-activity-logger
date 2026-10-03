@@ -185,3 +185,62 @@ class TestChunkedTranscriber:
         # 失敗チャンクは空として続行（他チャンクの結果は生きる）
         assert len(segments) == 2
         assert "チャンク転写失敗" in capsys.readouterr().out
+
+    def _make_failing(self, monkeypatch, failing_calls):
+        from screen_activity_logger.infrastructure import chunked_transcriber as ct
+
+        monkeypatch.setattr(ct, "audio_duration_seconds", lambda video: 3900.0)
+        monkeypatch.setattr(
+            ct,
+            "extract_audio_wav_span",
+            lambda video, wav, start, dur: wav.write_bytes(b"wav"),
+        )
+
+        class FlakyInner:
+            def __init__(self):
+                self.calls = 0
+
+            def transcribe_wav(self, wav_path):
+                self.calls += 1
+                if self.calls in failing_calls:
+                    raise RuntimeError("chunk boom")
+                return (_seg(20.0, 21.0, f"c{self.calls}"),)
+
+        return ct.ChunkedTranscriber(
+            FlakyInner(), chunk_seconds=1800.0, overlap_seconds=10.0, max_workers=1
+        )
+
+    def test_chunk_failure_is_summarized_with_lost_range(
+        self, monkeypatch, tmp_path, capsys
+    ) -> None:
+        """失敗チャンクは空として続行するが、欠落区間を最後にまとめて知らせる
+        （「発話なし」と「転写失敗」を出力から区別できるように、Issue #32）。"""
+        transcriber = self._make_failing(monkeypatch, failing_calls={2})
+
+        segments = transcriber.transcribe(tmp_path / "v.mp4")
+
+        assert len(segments) == 2
+        out = capsys.readouterr().out
+        assert "3チャンク中1チャンクの転写に失敗" in out
+        assert "00:30:00〜01:00:00" in out
+
+    def test_all_chunks_failing_is_called_out(
+        self, monkeypatch, tmp_path, capsys
+    ) -> None:
+        transcriber = self._make_failing(monkeypatch, failing_calls={1, 2, 3})
+
+        segments = transcriber.transcribe(tmp_path / "v.mp4")
+
+        assert segments == ()
+        out = capsys.readouterr().out
+        assert "3チャンク中3チャンクの転写に失敗" in out
+        assert "発話は1件も取得できていません" in out
+
+    def test_no_failure_summary_when_all_chunks_succeed(
+        self, monkeypatch, tmp_path, capsys
+    ) -> None:
+        transcriber = self._make_failing(monkeypatch, failing_calls=set())
+
+        transcriber.transcribe(tmp_path / "v.mp4")
+
+        assert "転写に失敗" not in capsys.readouterr().out
