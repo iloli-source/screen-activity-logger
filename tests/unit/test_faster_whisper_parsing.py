@@ -142,3 +142,62 @@ class TestFasterWhisperTranscriberWiring:
         assert len(FakeWhisperModel.constructed) == 1  # バッチでロード1回
         assert FakeWhisperModel.constructed[0]["device"] == "auto"
         assert FakeWhisperModel.constructed[0]["compute_type"] == "auto"
+
+
+class TestLazyModelInitIsThreadSafe:
+    """チャンク並列転写で複数スレッドが同時に初回呼び出ししても、モデルの
+    ロードは1回だけ（Issue #32、formal/ModelInit.tla の AtMostOneLoad）。"""
+
+    def test_concurrent_first_calls_load_model_once(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        import sys
+        import threading
+        import types
+
+        from screen_activity_logger.infrastructure.faster_whisper_transcriber import (
+            FasterWhisperTranscriber,
+        )
+
+        constructed: list[str] = []
+        first_load_started = threading.Event()
+        second_load_started = threading.Event()
+        finish_loading = threading.Event()
+
+        class SlowWhisperModel:
+            """ロード中に止まり、別スレッドが割り込める状態を作るフェイク。"""
+
+            def __init__(self, model: str, **kwargs) -> None:
+                constructed.append(model)
+                if len(constructed) == 1:
+                    first_load_started.set()
+                else:
+                    second_load_started.set()
+                finish_loading.wait(timeout=5)
+
+            def transcribe(self, audio: str, **kwargs):
+                return iter([_raw(0.0, 1.0, "テスト発話")]), None
+
+        fake_module = types.ModuleType("faster_whisper")
+        fake_module.WhisperModel = SlowWhisperModel
+        monkeypatch.setitem(sys.modules, "faster_whisper", fake_module)
+        transcriber = FasterWhisperTranscriber(num_workers=2)
+        results: list[tuple] = []
+
+        def worker() -> None:
+            results.append(transcriber.transcribe_wav(tmp_path / "chunk.wav"))
+
+        first = threading.Thread(target=worker)
+        second = threading.Thread(target=worker)
+        first.start()
+        assert first_load_started.wait(timeout=5)
+        # 1本目がロード中（未保存）の間に2本目を走らせる
+        second.start()
+        second_loaded_too = second_load_started.wait(timeout=0.3)
+        finish_loading.set()
+        first.join(timeout=5)
+        second.join(timeout=5)
+
+        assert not second_loaded_too
+        assert len(constructed) == 1
+        assert [[s.text for s in r] for r in results] == [["テスト発話"]] * 2

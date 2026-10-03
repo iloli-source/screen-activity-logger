@@ -8,6 +8,7 @@ ffmpegでwav抽出 → 認識 → 共通正規化（asr_segments.build_segment�
 from __future__ import annotations
 
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -65,6 +66,7 @@ class FasterWhisperTranscriber:
         self._compute_type = compute_type
         self._num_workers = max(1, num_workers)  # 並列transcribe用（Issue #29）
         self._loaded_model: Any = None
+        self._load_lock = threading.Lock()
 
     def transcribe(self, video_path: Path) -> tuple[TranscriptSegment, ...]:
         with tempfile.TemporaryDirectory(prefix="sal-audio-") as tmp:
@@ -83,18 +85,7 @@ class FasterWhisperTranscriber:
         return segments_from_faster_segments(self._run_whisper(wav_path))
 
     def _run_whisper(self, wav_path: Path) -> Any:
-        if self._loaded_model is None:
-            from faster_whisper import WhisperModel  # 遅延import（mlx版と同方針）
-
-            self._loaded_model = WhisperModel(
-                self._model,
-                device=self._device,
-                compute_type=self._compute_type,
-                # チャンク並列時に複数スレッドからのtranscribeを実並列で
-                # 処理する（CTranslate2のinter_threads。モデルは1つを共有）
-                num_workers=self._num_workers,
-            )
-        raw_segments, _info = self._loaded_model.transcribe(
+        raw_segments, _info = self._ensure_model().transcribe(
             str(wav_path),
             language="ja",
             chunk_length=15,  # kotoba公式推奨
@@ -102,3 +93,27 @@ class FasterWhisperTranscriber:
             vad_filter=False,  # mlxと挙動を揃え、幻覚対策はdomainフィルタに一元化
         )
         return raw_segments
+
+    def _ensure_model(self) -> Any:
+        """モデルを初回だけロードして返す。
+
+        チャンク並列ではワーカースレッドが同時に初回呼び出しに来る。排他なしの
+        「未ロードなら作る」ではスレッド数ぶんモデルをロードしてしまう
+        （数GBのメモリと数秒のロード時間が重複、Issue #32）ため、ロックを
+        取ってから再確認する。ロード済みならロックを取らずに返す。
+        """
+        if self._loaded_model is None:
+            with self._load_lock:
+                if self._loaded_model is None:
+                    # 遅延import（mlx版と同方針）
+                    from faster_whisper import WhisperModel
+
+                    self._loaded_model = WhisperModel(
+                        self._model,
+                        device=self._device,
+                        compute_type=self._compute_type,
+                        # チャンク並列時に複数スレッドからのtranscribeを実並列で
+                        # 処理する（CTranslate2のinter_threads。モデルは1つを共有）
+                        num_workers=self._num_workers,
+                    )
+        return self._loaded_model
